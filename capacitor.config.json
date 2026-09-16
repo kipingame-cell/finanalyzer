@@ -1,0 +1,8 @@
+{
+  "appId": "com.finanalyzer.app",
+  "appName": "FinAnalyzer",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
+}
