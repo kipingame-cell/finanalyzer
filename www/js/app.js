@@ -292,7 +292,8 @@ async function openNotifications() {
     <h2>🔔 Операции из уведомлений</h2>
     ${!native ? `<div class="tip info"><div class="t-head">💡 Веб-режим</div><div class="t-body">Автоматическое чтение работает в Android-приложении. Здесь можно вставить текст уведомления вручную — распознаю сумму, магазин и категорию.</div></div>` :
       !enabled ? `<div class="tip warn"><div class="t-head">⚠️ Доступ не выдан</div><div class="t-body">Чтобы приложение само подхватывало покупки из уведомлений банка (Сбер, Т-Банк и др.), выдайте доступ к уведомлениям.</div></div>
-      <button class="btn btn-primary btn-block" id="btn-grant">Открыть настройки доступа</button><div class="mt16"></div>` :
+      <button class="btn btn-primary btn-block" id="btn-grant">Открыть настройки доступа</button>
+      <div class="tip info" style="margin-top:10px"><div class="t-head">🔒 Пишет «Настройки с ограниченным доступом»?</div><div class="t-body">Android 13+ блокирует доступ к уведомлениям для приложений, установленных не из маркета. Решение:<br>1. Настройки телефона → Приложения → Финансовый анализатор.<br>2. Нажмите ⋮ (три точки) сверху справа → «Разрешить ограниченные настройки».<br>3. Подтвердите и вернитесь сюда — доступ к уведомлениям откроется.</div></div><div class="mt16"></div>` :
       `<p class="muted" style="font-size:13px">Доступ есть. Перехвачено уведомлений: ${total}. Новых операций: ${suggestions.length}.</p>`}
     <div id="sugg-list">${suggestions.map(suggHTML).join('')}</div>
     <div class="card" style="margin-top:6px">
