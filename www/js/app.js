@@ -275,3 +275,333 @@ function openAISettings() {
     closeModal(); toast('Токен сохранён'); renderAI();
   };
 }
+
+// ============================================================
+// УВЕДОМЛЕНИЯ → ОПЕРАЦИИ
+// ============================================================
+async function openNotifications() {
+  const native = isNativeAvailable();
+  const enabled = native ? await isListenerEnabled() : false;
+  let suggestions = [];
+  let total = 0;
+  if (native && enabled) {
+    const r = await fetchSuggestions();
+    suggestions = r.suggestions; total = r.total || 0;
+  }
+  const m = openModal(`
+    <h2>🔔 Операции из уведомлений</h2>
+    ${!native ? `<div class="tip info"><div class="t-head">💡 Веб-режим</div><div class="t-body">Автоматическое чтение работает в Android-приложении. Здесь можно вставить текст уведомления вручную — распознаю сумму, магазин и категорию.</div></div>` :
+      !enabled ? `<div class="tip warn"><div class="t-head">⚠️ Доступ не выдан</div><div class="t-body">Чтобы приложение само подхватывало покупки из уведомлений банка (Сбер, Т-Банк и др.), выдайте доступ к уведомлениям.</div></div>
+      <button class="btn btn-primary btn-block" id="btn-grant">Открыть настройки доступа</button><div class="mt16"></div>` :
+      `<p class="muted" style="font-size:13px">Доступ есть. Перехвачено уведомлений: ${total}. Новых операций: ${suggestions.length}.</p>`}
+    <div id="sugg-list">${suggestions.map(suggHTML).join('')}</div>
+    <div class="card" style="margin-top:6px">
+      <div class="card-title">Или вставьте текст вручную</div>
+      <div class="field"><textarea id="paste" rows="3" placeholder="Напр.: Покупка 450,00 ₽, ПЯТЁРОЧКА. Баланс: 12 340 ₽"></textarea></div>
+      <button class="btn btn-block" id="btn-parse">Распознать</button>
+      <div id="paste-result" class="mt8"></div>
+    </div>
+    <button class="btn btn-ghost btn-block" id="btn-close-n">Закрыть</button>`);
+
+  $('#btn-close-n', m).onclick = closeModal;
+  const grant = $('#btn-grant', m);
+  if (grant) grant.onclick = () => openListenerSettings();
+  bindSuggestionButtons($('#sugg-list', m));
+  $('#btn-parse', m).onclick = () => {
+    const text = $('#paste', m).value;
+    const parsed = parsePastedText(text);
+    const box = $('#paste-result', m);
+    if (!parsed.length) { box.innerHTML = '<div class="tip warn"><div class="t-head">⚠️ Не распознано</div><div class="t-body">Не нашёл сумму с валютой (₽/руб). Проверьте текст.</div></div>'; return; }
+    box.innerHTML = parsed.map(suggHTML).join('');
+    bindSuggestionButtons(box);
+  };
+}
+
+const suggCache = new Map();
+function suggHTML(p) {
+  suggCache.set(p.hash, p);
+  const c = S.getCategory(p.categoryId);
+  return `<div class="sugg-card" data-hash="${p.hash}">
+    <div class="flex">
+      <div class="tx-ico" style="background:${c.color}22">${c.icon}</div>
+      <div class="grow">
+        <div style="font-weight:700">${esc(p.note || c.name)}</div>
+        <div class="muted" style="font-size:12px">${esc(c.name)} · ${p.type === 'income' ? 'доход' : 'расход'}</div>
+      </div>
+      <b style="font-size:16px;color:${p.type === 'income' ? 'var(--good)' : 'var(--text)'}">${p.type === 'income' ? '+' : '−'}${S.fmtMoney(p.amount)}</b>
+    </div>
+    <div class="flex mt8">
+      <button class="btn btn-primary btn-sm grow" data-act="add">✓ Записать</button>
+      <button class="btn btn-sm" data-act="edit">Изменить</button>
+      <button class="btn btn-sm btn-ghost" data-act="skip">✕</button>
+    </div>
+    <div class="sugg-raw">${esc(p.rawText)}</div>
+  </div>`;
+}
+
+function bindSuggestionButtons(container) {
+  if (!container) return;
+  container.querySelectorAll('.sugg-card').forEach(card => {
+    const hash = card.dataset.hash;
+    card.querySelectorAll('button').forEach(btn => {
+      btn.onclick = () => {
+        const act = btn.dataset.act;
+        if (act === 'skip') { markDismissed(hash); card.remove(); refreshBadge(); return; }
+        const p = suggCache.get(hash);
+        if (!p) { card.remove(); return; }
+        if (act === 'add') {
+          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash });
+          markSeen(hash);
+          card.remove(); toast('Операция записана'); refreshBadge(); renderCurrent(false);
+        } else if (act === 'edit') {
+          openTxModal(null, p, () => { markSeen(hash); card.remove(); refreshBadge(); renderCurrent(false); });
+        }
+      };
+    });
+  });
+}
+
+async function refreshBadge() {
+  if (!isNativeAvailable()) return;
+  if (!(await isListenerEnabled())) return;
+  const r = await fetchSuggestions();
+  pendingSuggCount = r.suggestions.length;
+  const btn = $('#btn-notif');
+  if (btn) btn.innerHTML = `🔔 ${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : ''}`;
+}
+
+// ============================================================
+// ДОБАВЛЕНИЕ / РЕДАКТИРОВАНИЕ ОПЕРАЦИИ
+// ============================================================
+function openTxModal(existing = null, draft = null, onSaved = null) {
+  const src = existing || draft || {};
+  let type = src.type || 'expense';
+  let categoryId = src.categoryId || null;
+  const m = openModal(`
+    <h2>${existing ? '✏️ Операция' : '＋ Новая операция'}</h2>
+    <div class="seg" id="type-seg">
+      <button data-t="expense" class="${type === 'expense' ? 'active' : ''}">Расход</button>
+      <button data-t="income" class="${type === 'income' ? 'active' : ''}">Доход</button>
+    </div>
+    <div class="field"><input id="f-amount" class="amount-input" inputmode="decimal" placeholder="0" value="${src.amount || ''}"></div>
+    <div class="field"><label>Категория</label><div class="cat-grid" id="cat-grid"></div></div>
+    <div class="field"><label>Комментарий</label><input id="f-note" value="${esc(src.note || '')}" placeholder="Напр.: Пятёрочка"></div>
+    <div class="field"><label>Дата</label><input id="f-date" type="datetime-local" value="${toLocalInput(src.date)}"></div>
+    <div class="flex">
+      ${existing ? '<button class="btn btn-danger" id="tx-del">🗑</button>' : ''}
+      <button class="btn btn-primary btn-block grow" id="tx-save">Сохранить</button>
+    </div>`);
+
+  function renderCatGrid() {
+    const grid = $('#cat-grid', m);
+    const cats = S.getCategories(type);
+    if (!categoryId || !cats.some(c => c.id === categoryId)) categoryId = cats[0] ? cats[0].id : null;
+    grid.innerHTML = cats.map(c => `<div class="cat-cell ${c.id === categoryId ? 'active' : ''}" data-id="${c.id}">
+      <span class="ci">${c.icon}</span><span>${esc(c.name)}</span></div>`).join('');
+    grid.querySelectorAll('.cat-cell').forEach(el => el.onclick = () => { categoryId = el.dataset.id; renderCatGrid(); });
+  }
+  renderCatGrid();
+
+  $('#type-seg', m).querySelectorAll('button').forEach(b => b.onclick = () => {
+    type = b.dataset.t;
+    $('#type-seg', m).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    categoryId = null; renderCatGrid();
+  });
+
+  $('#tx-save', m).onclick = () => {
+    const amount = parseFloat(String($('#f-amount', m).value).replace(',', '.'));
+    if (!amount || amount <= 0) { toast('Введите сумму'); return; }
+    const patch = {
+      type, amount, categoryId,
+      note: $('#f-note', m).value.trim(),
+      date: new Date($('#f-date', m).value || Date.now()).toISOString(),
+      source: src.source || 'manual',
+    };
+    if (existing) { S.updateTransaction(existing.id, patch); toast('Сохранено'); }
+    else { if (src.hash) patch.hash = src.hash; S.addTransaction(patch); toast('Добавлено'); }
+    closeModal();
+    if (onSaved) onSaved(); else renderCurrent(false);
+  };
+  const del = $('#tx-del', m);
+  if (del) del.onclick = () => {
+    if (confirm('Удалить операцию?')) { S.deleteTransaction(existing.id); closeModal(); renderCurrent(false); toast('Удалено'); }
+  };
+}
+
+function toLocalInput(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+// ============================================================
+// ЕЩЁ (настройки, категории, бэкап, обновление)
+// ============================================================
+function renderMore() {
+  const s = S.getSettings();
+  view().innerHTML = `
+    <div class="page-head"><h1>Ещё</h1></div>
+    <div class="card row-list">
+      <div class="menu-row" id="m-notif"><span class="mr-ico">🔔</span><div class="mr-text">Операции из уведомлений<div class="mr-sub">Сбер, Т-Банк, Альфа — автоматически</div></div>${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : '›'}</div>
+      <div class="menu-row" id="m-cats"><span class="mr-ico">🏷️</span><div class="mr-text">Категории и бюджеты<div class="mr-sub">${S.getCategories().length} категорий</div></div>›</div>
+      <div class="menu-row" id="m-ai"><span class="mr-ico">🔑</span><div class="mr-text">ИИ-токен<div class="mr-sub">${hasToken() ? 'подключён' : 'не задан (офлайн-советы работают)'}</div></div>›</div>
+      <div class="menu-row" id="m-backup"><span class="mr-ico">💾</span><div class="mr-text">Бэкап и восстановление<div class="mr-sub">JSON-файл</div></div>›</div>
+      <div class="menu-row" id="m-demo"><span class="mr-ico">✨</span><div class="mr-text">Демо-данные<div class="mr-sub">заполнить примером для показа</div></div>›</div>
+      <div class="menu-row" id="m-update"><span class="mr-ico">🔄</span><div class="mr-text">Обновление приложения<div class="mr-sub">версия ${APP_VERSION}</div></div>›</div>
+    </div>
+    <div class="card row-list">
+      <div class="menu-row" id="m-wipe"><span class="mr-ico">🗑️</span><div class="mr-text" style="color:#fda4af">Сбросить все данные</div></div>
+    </div>
+    <p class="muted" style="font-size:12px;text-align:center">${APP_NAME} v${APP_VERSION}<br>Все данные хранятся только на вашем устройстве.</p>`;
+  $('#m-notif').onclick = openNotifications;
+  $('#m-cats').onclick = openCategories;
+  $('#m-ai').onclick = openAISettings;
+  $('#m-backup').onclick = openBackup;
+  $('#m-demo').onclick = () => { if (confirm('Добавить демонстрационные операции? Они смешаются с вашими.')) { S.loadDemoData(); toast('Демо-данные загружены'); renderCurrent(false); } };
+  $('#m-update').onclick = manualUpdateCheck;
+  $('#m-wipe').onclick = () => { if (confirm('Удалить ВСЕ операции и настройки? Это необратимо.')) { S.wipeAll(); toast('Данные удалены'); renderCurrent(false); } };
+}
+
+// ---------- Категории и бюджеты ----------
+function openCategories() {
+  const renderList = (m) => {
+    const html = S.getCategories().map(c => `
+      <div class="legend-row" data-id="${c.id}">
+        <span class="legend-dot" style="background:${c.color}"></span>
+        <span class="legend-name">${c.icon} ${esc(c.name)} <span class="muted" style="font-size:11px">${c.type === 'income' ? 'доход' : 'расход'}</span></span>
+        ${c.type === 'expense' ? `<span class="muted" style="font-size:12px">бюджет: ${c.budget ? S.fmtMoney(c.budget) : '—'}</span>` : ''}
+        <button class="btn btn-sm btn-ghost" data-edit="${c.id}">✏️</button>
+      </div>`).join('');
+    $('#cat-list', m).innerHTML = html;
+    m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editCategory(b.dataset.edit, m, renderList));
+  };
+  const m = openModal(`
+    <h2>🏷️ Категории и бюджеты</h2>
+    <div id="cat-list"></div>
+    <button class="btn btn-block mt8" id="cat-add">＋ Новая категория</button>
+    <button class="btn btn-ghost btn-block mt8" id="cat-close">Закрыть</button>`);
+  renderList(m);
+  $('#cat-close', m).onclick = () => { closeModal(); renderCurrent(false); };
+  $('#cat-add', m).onclick = () => editCategory(null, m, renderList);
+}
+
+function editCategory(id, parentModal, rerender) {
+  const c = id ? S.getCategory(id) : { name: '', icon: '💠', color: '#7c6cff', type: 'expense', budget: 0 };
+  const icons = ['🛒','☕','🚌','⛽','🏠','💊','👕','🎮','🔁','📱','📚','🎁','📦','💼','💵','🏆','🛠️','💰','🍔','💈','🐾','🚗','✈️','🎬','💄','🏋️','👶','🐱','💳','🧾'];
+  const colors = ['#4ade80','#fbbf24','#60a5fa','#f97316','#a78bfa','#f472b6','#38bdf8','#e879f9','#fb7185','#34d399','#facc15','#94a3b8','#7c6cff','#22d3ee'];
+  const m2 = document.createElement('div');
+  $('#modal-root').innerHTML = '';
+  const m = openModal(`
+    <h2>${id ? '✏️' : '＋'} Категория</h2>
+    <div class="field"><label>Название</label><input id="c-name" value="${esc(c.name)}"></div>
+    <div class="seg" id="c-type">
+      <button data-t="expense" class="${c.type === 'expense' ? 'active' : ''}">Расход</button>
+      <button data-t="income" class="${c.type === 'income' ? 'active' : ''}">Доход</button>
+    </div>
+    <div class="field"><label>Иконка</label><div class="chip-row" id="c-icons">${icons.map(i => `<span class="chip ${i === c.icon ? 'active' : ''}" data-i="${i}">${i}</span>`).join('')}</div></div>
+    <div class="field"><label>Цвет</label><div class="chip-row" id="c-colors">${colors.map(x => `<span class="chip" style="background:${x};min-width:34px" data-c="${x}"></span>`).join('')}</div></div>
+    <div class="field" id="c-budget-wrap"><label>Бюджет на месяц, ₽ (0 — без лимита)</label><input id="c-budget" inputmode="numeric" value="${c.budget || 0}"></div>
+    <div class="flex">
+      ${id ? '<button class="btn btn-danger" id="c-del">🗑</button>' : ''}
+      <button class="btn btn-primary btn-block grow" id="c-save">Сохранить</button>
+    </div>`);
+  let type = c.type, icon = c.icon, color = c.color;
+  $('#c-type', m).querySelectorAll('button').forEach(b => b.onclick = () => {
+    type = b.dataset.t;
+    $('#c-type', m).querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    $('#c-budget-wrap', m).style.display = type === 'expense' ? '' : 'none';
+  });
+  $('#c-budget-wrap', m).style.display = type === 'expense' ? '' : 'none';
+  $('#c-icons', m).querySelectorAll('.chip').forEach(el => el.onclick = () => { icon = el.dataset.i; $('#c-icons', m).querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === el)); });
+  $('#c-colors', m).querySelectorAll('.chip').forEach(el => el.onclick = () => { color = el.dataset.c; el.style.outline = '2px solid #fff'; $('#c-colors', m).querySelectorAll('.chip').forEach(x => { if (x !== el) x.style.outline = 'none'; }); });
+  $('#c-save', m).onclick = () => {
+    const name = $('#c-name', m).value.trim();
+    if (!name) { toast('Введите название'); return; }
+    const budget = Math.max(0, parseInt($('#c-budget', m).value) || 0);
+    if (id) S.updateCategory(id, { name, icon, color, type, budget });
+    else S.addCategory({ name, icon, color, type, budget });
+    closeModal(); openCategories(); // перерисуем список
+  };
+  const del = $('#c-del', m);
+  if (del) del.onclick = () => { if (confirm('Удалить категорию? Операции перейдут в «Прочее».')) { S.deleteCategory(id); closeModal(); openCategories(); } };
+}
+
+// ---------- Бэкап ----------
+function openBackup() {
+  const m = openModal(`
+    <h2>💾 Бэкап</h2>
+    <button class="btn btn-primary btn-block" id="b-export">⬇️ Скачать бэкап (JSON)</button>
+    <div class="mt16"></div>
+    <div class="field"><label>Восстановить из файла/текста</label><textarea id="b-text" rows="4" placeholder="Вставьте содержимое JSON-бэкапа"></textarea></div>
+    <button class="btn btn-block" id="b-import">⬆️ Восстановить</button>
+    <button class="btn btn-ghost btn-block mt8" id="b-close">Закрыть</button>`);
+  $('#b-close', m).onclick = closeModal;
+  $('#b-export', m).onclick = () => {
+    const blob = new Blob([S.exportJSON()], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `finanalyzer-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    toast('Бэкап скачан');
+  };
+  $('#b-import', m).onclick = () => {
+    try { S.importJSON($('#b-text', m).value); closeModal(); toast('Данные восстановлены'); renderCurrent(false); }
+    catch (e) { toast('Ошибка: ' + e.message); }
+  };
+}
+
+// ---------- Обновление ----------
+async function manualUpdateCheck() {
+  toast('Проверяю обновления…');
+  try {
+    const r = await checkUpdate();
+    if (r.hasUpdate) showUpdateDialog(r);
+    else toast(r.error === 'no-release' ? 'Релизы ещё не собраны' : 'У вас последняя версия');
+  } catch (e) { toast('Нет связи с сервером обновлений'); }
+}
+
+function showUpdateDialog(r) {
+  const m = openModal(`
+    <h2>🔄 Доступно обновление</h2>
+    <p>Новая версия: <b>${esc(r.version)}</b> (у вас v${APP_VERSION})${r.size ? `<br><span class="muted">Размер: ${(r.size / 1048576).toFixed(1)} МБ</span>` : ''}</p>
+    ${r.notes ? `<p class="muted" style="font-size:13px">${esc(r.notes)}</p>` : ''}
+    <div class="flex">
+      <button class="btn btn-block" id="u-later">Позже</button>
+      <button class="btn btn-primary btn-block" id="u-go">Скачать и установить</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:10px">После скачивания откройте APK-файл — Android предложит обновить приложение поверх текущего, данные сохранятся.</p>`);
+  $('#u-later', m).onclick = closeModal;
+  $('#u-go', m).onclick = () => { downloadUpdate(r.url); closeModal(); };
+}
+
+// ============================================================
+// РОУТЕР / ИНИЦИАЛИЗАЦИЯ
+// ============================================================
+function renderCurrent(resetAnim = true) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === currentTab));
+  $('#fab').style.display = (currentTab === 'home' || currentTab === 'ops') ? '' : 'none';
+  if (currentTab === 'home') renderHome();
+  else if (currentTab === 'ops') renderOps();
+  else if (currentTab === 'stats') renderStats();
+  else if (currentTab === 'ai') renderAI();
+  else renderMore();
+}
+
+async function autoUpdateCheck() {
+  try {
+    const r = await checkUpdate();
+    if (r.hasUpdate) showUpdateDialog(r);
+  } catch (e) { /* офлайн — молча */ }
+}
+
+function boot() {
+  S.initStore();
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => { currentTab = t.dataset.tab; renderCurrent(); });
+  $('#fab').onclick = () => openTxModal();
+  renderCurrent();
+  setTimeout(autoUpdateCheck, 2500);
+  refreshBadge();
+  setInterval(refreshBadge, 30000);
+}
+
+boot();
