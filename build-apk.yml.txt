@@ -27,6 +27,18 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
+      # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
+      # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
+      # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
+      # имя KEYSTORE_BASE64, значение — содержимое файла KEYSTORE_BASE64.txt
+      - run: |
+          mkdir -p ~/.android
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+            echo "Подпись: постоянный ключ из секрета"
+          else
+            echo "ВНИМАНИЕ: секрет KEYSTORE_BASE64 не задан — сборка подписана одноразовым ключом!"
+          fi
       # Номер сборки заранее — он нужен и приложению, и релизу
       - id: ver
         run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
