@@ -27,6 +27,13 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
+      # Номер сборки заранее — он нужен и приложению, и релизу
+      - id: ver
+        run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      # Вшиваем полную версию со сборкой в приложение, иначе автообновление будет
+      # бесконечно предлагать "новую" версию (приложение не знало свой build-номер)
+      - run: sed -i "s|^export const APP_VERSION = '.*';|export const APP_VERSION = '${{ steps.ver.outputs.tag }}';|" www/js/config.js
+      - run: grep "APP_VERSION" www/js/config.js
       - run: npx cap add android      # создаёт android/ (в .gitignore)
       # Подкладываем нативный модуль чтения уведомлений и свою MainActivity
       - run: |
@@ -54,8 +61,6 @@ jobs:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
       # Релиз для автообновления: приложение на телефоне смотрит releases/latest
-      - id: ver
-        run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
