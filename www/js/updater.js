@@ -2,10 +2,10 @@
 import { APP_VERSION, GITHUB_REPO } from './config.js';
 
 function parseTag(tag) {
-  // формат v1.2.3-b45
+  // формат v1.2.3-b45 (номер сборки может отсутствовать)
   const m = String(tag || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-b(\d+))?/);
   if (!m) return null;
-  return { major: +m[1], minor: +m[2], patch: +m[3], build: +(m[4] || 0) };
+  return { major: +m[1], minor: +m[2], patch: +m[3], build: +(m[4] || 0), hasBuild: !!m[4] };
 }
 
 function cmpVersion(a, b) {
@@ -27,7 +27,10 @@ export async function checkUpdate() {
   if (!latest || !cur) return { hasUpdate: false };
   const apk = (rel.assets || []).find(a => /\.apk$/i.test(a.name || '')) || (rel.assets || [])[0];
   if (!apk) return { hasUpdate: false };
-  if (cmpVersion(latest, cur) > 0) {
+  // Если в приложение не вшит номер сборки (старая схема), сравниваем только
+  // x.y.z — иначе каждый новый билд той же версии будет бесконечно «новым».
+  const a = cur.hasBuild ? cur : { ...cur, build: latest.build };
+  if (cmpVersion(latest, a) > 0) {
     return {
       hasUpdate: true,
       version: rel.tag_name,
