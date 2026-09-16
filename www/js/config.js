@@ -1,7 +1,7 @@
 // Конфигурация приложения
 // ВНИМАНИЕ: при сборке APK workflow заменяет эту строку на полный тег (vX.Y.Z-bN),
 // чтобы установленное приложение знало номер своей сборки и не дёргало обновление зря.
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.0.2';
 export const GITHUB_REPO = 'kipingame-cell/finanalyzer'; // для автообновления
 export const APP_NAME = 'Финансовый анализатор';
 
