@@ -531,17 +531,33 @@ function editCategory(id, parentModal, rerender) {
 function openBackup() {
   const m = openModal(`
     <h2>💾 Бэкап</h2>
-    <button class="btn btn-primary btn-block" id="b-export">⬇️ Скачать бэкап (JSON)</button>
+    <button class="btn btn-primary btn-block" id="b-export">💾 Сохранить бэкап</button>
     <div class="mt16"></div>
     <div class="field"><label>Восстановить из файла/текста</label><textarea id="b-text" rows="4" placeholder="Вставьте содержимое JSON-бэкапа"></textarea></div>
     <button class="btn btn-block" id="b-import">⬆️ Восстановить</button>
     <button class="btn btn-ghost btn-block mt8" id="b-close">Закрыть</button>`);
   $('#b-close', m).onclick = closeModal;
-  $('#b-export', m).onclick = () => {
-    const blob = new Blob([S.exportJSON()], { type: 'application/json' });
+  $('#b-export', m).onclick = async () => {
+    const data = S.exportJSON();
+    const fname = `finanalyzer-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    // Всегда показываем JSON в поле — как запасной вариант можно скопировать руками
+    $('#b-text', m).value = data;
+    // В Android WebView браузерное скачивание не работает — пишем файл нативно
+    const fs = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (fs) {
+      try {
+        await fs.writeFile({ path: `FinAnalyzer/${fname}`, data, directory: 'DOCUMENTS', recursive: true });
+        toast('Сохранено: Документы/FinAnalyzer/' + fname, 3500);
+      } catch (e) {
+        toast('Не вышло сохранить файл — скопируйте текст из поля ниже', 3500);
+      }
+      return;
+    }
+    // Веб-фолбэк (браузер)
+    const blob = new Blob([data], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `finanalyzer-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = fname;
     a.click();
     toast('Бэкап скачан');
   };
