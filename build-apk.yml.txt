@@ -38,11 +38,16 @@ jobs:
             exit 1
           fi
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
-          FP=$(keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -v 2>/dev/null | grep -oE 'SHA-?256: [0-9A-F:]+' | head -1)
-          echo "Отпечаток ключа из секрета: $FP"
+          KSHA=$(sha256sum ~/.android/debug.keystore | cut -d' ' -f1)
+          echo "Размер файла ключа: $(stat -c%s ~/.android/debug.keystore) байт"
+          echo "SHA256 файла ключа: $KSHA"
+          echo "Ожидалось:          0d9fcf5a1c3d5035e0b07d76b8e53cc0b044625805ca1ecdbae92145e6e29a87"
+          INFO=$(keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -v 2>&1 || true)
+          echo "$INFO" | grep -E "Owner|SHA256" || true
+          FP=$(echo "$INFO" | grep -oE 'SHA-?256: [0-9A-F:]+' | head -1 || true)
           case "$FP" in
             *"0C:69:01:F4:67:E0:FD:69"*) echo "Подпись: постоянный ключ FinAnalyzer (отпечаток совпал)" ;;
-            *) echo "::error::В секрете НЕ ТОТ ключ! Нужен отпечаток SHA256, начинающийся с 0C:69:01:F4:67:E0:FD:69. Пересоздайте секрет KEYSTORE_BASE64: значение = ВСЁ содержимое файла KEYSTORE_BASE64.txt (тот, что прислан в чате), без лишних символов."
+            *) echo "::error::В секрете НЕ ТОТ ключ! В секрете лежит: ${FP:-нечитаемый файл}, sha256 файла: $KSHA. Нужен ключ из KEYSTORE_BASE64.txt (отпечаток 0C:69:01:F4…)."
                exit 1 ;;
           esac
       # Номер сборки заранее — он нужен и приложению, и релизу
@@ -74,11 +79,19 @@ jobs:
           EOF
       - run: npx cap sync android      # копирует www/ в android-проект
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace
-      # Контроль: APK должен быть подписан нашим постоянным ключом (O=FinAnalyzer)
+      # Контроль: APK должен быть подписан нашим постоянным ключом (O=FinAnalyzer).
+      # Сначала печатаем реального подписанта — чтобы в логе было видно, чей ключ.
       - run: |
-          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep -q "O=FinAnalyzer" \
-            && echo "Подпись APK проверена: постоянный ключ" \
-            || { echo "::error::APK подписан НЕ постоянным ключом!"; exit 1; }
+          echo "=== Кем подписан собранный APK ==="
+          CERT=$(keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk 2>&1 || true)
+          echo "$CERT" | grep -E "Owner|SHA256|SHA-256" || echo "$CERT"
+          if echo "$CERT" | grep -q "O=FinAnalyzer"; then
+            echo "Подпись APK проверена: постоянный ключ"
+          else
+            SIGNER=$(echo "$CERT" | grep -m1 "Owner" || echo "keytool не смог прочитать подпись")
+            echo "::error::APK подписан НЕ постоянным ключом! Подписант: $SIGNER"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
