@@ -1,7 +1,7 @@
 // Конфигурация приложения
 // ВНИМАНИЕ: при сборке APK workflow заменяет эту строку на полный тег (vX.Y.Z-bN),
 // чтобы установленное приложение знало номер своей сборки и не дёргало обновление зря.
-export const APP_VERSION = '1.0.3';
+export const APP_VERSION = '1.1.0';
 export const GITHUB_REPO = 'kipingame-cell/finanalyzer'; // для автообновления
 export const APP_NAME = 'Финансовый анализатор';
 
@@ -15,6 +15,7 @@ export const DEFAULT_CATEGORIES = [
   { id: 'home',        name: 'Дом и ЖКХ',     icon: '🏠', color: '#a78bfa', type: 'expense', budget: 8000 },
   { id: 'health',      name: 'Здоровье',      icon: '💊', color: '#f472b6', type: 'expense', budget: 3000 },
   { id: 'clothes',     name: 'Одежда',        icon: '👕', color: '#38bdf8', type: 'expense', budget: 5000 },
+  { id: 'market',      name: 'Маркетплейсы',  icon: '🛍️', color: '#c084fc', type: 'expense', budget: 5000 },
   { id: 'fun',         name: 'Развлечения',   icon: '🎮', color: '#e879f9', type: 'expense', budget: 4000 },
   { id: 'subs',        name: 'Подписки',      icon: '🔁', color: '#fb7185', type: 'expense', budget: 1500 },
   { id: 'comm',        name: 'Связь и интернет', icon: '📱', color: '#34d399', type: 'expense', budget: 1000 },
@@ -38,9 +39,10 @@ export const CATEGORY_KEYWORDS = {
   fuel: ['азс', 'лукойл', 'газпромнефть', 'роснефть', 'татнефть', 'башнефть', 'заправк', 'топливо', 'shell', 'эка'],
   home: ['жкх', 'квартплат', 'электроэнерг', 'коммунал', 'ипотек', 'аренд', 'леруа', 'леруа мерлен', 'oba', 'стройматериал', 'мебель', 'ikea', 'hoff', 'петрович'],
   health: ['аптек', 'аптеч', 'лекарств', 'врач', 'клиник', 'стоматолог', 'анализ', 'больниц', 'медицин', 'витамин'],
-  clothes: ['одежд', 'обувь', 'wildberries', 'вайлдберриз', 'ozon', 'озон', 'lamoda', 'зара', 'zara', 'h&m', 'спортмастер', 'адик', 'nike', 'adidas'],
+  clothes: ['одежд', 'обувь', 'lamoda', 'ламода', 'зара', 'zara', 'h&m', 'спортмастер', 'адик', 'nike', 'adidas', 'kari', 'rendez-vous'],
+  market: ['wildberries', 'вайлдберриз', 'ozon', 'озон', 'яндекс маркет', 'market.yandex', 'алиэкспресс', 'aliexpress', 'мегамаркет', 'sbermegamarket', 'сбермегамаркет', 'kazanexpress', 'маркетплейс'],
   fun: ['кино', 'кинотеатр', 'игр', 'steam', 'playstation', 'xbox', 'боулинг', 'квест', 'концерт', 'театр', 'аквапарк', 'букмекер', 'ставк'],
-  subs: ['подписк', 'subscription', 'netflix', 'spotify', 'youtube premium', 'яндекс плюс', 'vk музыка', 'кинопоиск', 'ivi', 'okko', 'premier', 'chatgpt', 'openai'],
+  subs: ['подписк', 'subscription', 'netflix', 'spotify', 'youtube premium', 'яндекс плюс', 'yandex plus', 'vk музыка', 'кинопоиск', 'ivi', 'okko', 'premier', 'chatgpt', 'openai', 'google one', 'apple.com/bill', 'icloud'],
   comm: ['мтс', 'билайн', 'beeline', 'мегафон', 'tele2', 'теле2', 'yota', 'йота', 'ростелеком', 'дом.ру', 'интернет', 'связь', 'трафик'],
   education: ['курс', 'обучен', 'учебник', 'книг', 'book', 'skillbox', 'нетология', 'удаленк', 'школ'],
   gifts: ['подарок', 'цветы', 'букет', 'flowwow', 'ювелир'],
@@ -50,9 +52,15 @@ export const CATEGORY_KEYWORDS = {
 };
 
 // Пакеты приложений, из которых чаще всего приходят финансовые уведомления
+// (включая SMS-приложения — многие банки шлют SMS, которые прилетают как уведомления)
 export const KNOWN_BANK_PACKAGES = [
   'ru.sberbankmobile', 'com.idamob.tinkoff.android', 'ru.alfabank.mobile.android',
   'ru.vtb24.mobilebanking.android', 'ru.ftc.faktura.raiffeisen', 'ru.openbank',
   'ru.rosbank.android', 'ru.otpbank.mobile', 'com.sovkombank.mobile', 'ru.gazprombank.android.mobilebank.app',
   'ru.mts.money', 'ru.letobank.Prometheus', 'com.wallet', 'ru.tinkoff.investing',
+  'ru.yandex.bank', 'ru.yandex.pay', 'ru.ozon.app.android', 'com.wildberries.ru',
+  'ru.psb.mobile', 'ru.ubrr.mobile', 'ru.akbars.mobile', 'ru.rnkb.dbo', 'ru.dom.rfbank',
+  // SMS-приложения (уведомления о банковских SMS: Сбер — номер 900 и т.п.)
+  'com.google.android.apps.messaging', 'com.android.messaging', 'com.android.mms',
+  'com.samsung.android.messaging', 'ru.samsung.android.messaging', 'com.miui.smsextra',
 ];
