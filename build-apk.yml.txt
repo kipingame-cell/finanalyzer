@@ -29,16 +29,16 @@ jobs:
       - run: npm install
       # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
       # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
-      # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
-      # имя KEYSTORE_BASE64, значение — содержимое файла KEYSTORE_BASE64.txt
+      # Секрет: Settings → Secrets and variables → Actions → Repository secrets
+      # ЭТОГО репозитория → имя KEYSTORE_BASE64, значение — содержимое KEYSTORE_BASE64.txt
       - run: |
           mkdir -p ~/.android
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
-            echo "Подпись: постоянный ключ из секрета"
-          else
-            echo "ВНИМАНИЕ: секрет KEYSTORE_BASE64 не задан — сборка подписана одноразовым ключом!"
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "::error::Секрет KEYSTORE_BASE64 пуст или не виден! Проверьте: Settings → Secrets and variables → Actions → Repository secrets этого репозитория."
+            exit 1
           fi
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null && echo "Подпись: постоянный ключ из секрета (валиден)"
       # Номер сборки заранее — он нужен и приложению, и релизу
       - id: ver
         run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
@@ -68,6 +68,11 @@ jobs:
           EOF
       - run: npx cap sync android      # копирует www/ в android-проект
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace
+      # Контроль: APK должен быть подписан нашим постоянным ключом (O=FinAnalyzer)
+      - run: |
+          keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep -q "O=FinAnalyzer" \
+            && echo "Подпись APK проверена: постоянный ключ" \
+            || { echo "::error::APK подписан НЕ постоянным ключом!"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
