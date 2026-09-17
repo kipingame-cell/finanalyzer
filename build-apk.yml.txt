@@ -29,8 +29,8 @@ jobs:
       - run: npm install
       # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
       # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
-      # Секрет: Settings → Secrets and variables → Actions → Repository secrets
-      # ЭТОГО репозитория → имя KEYSTORE_BASE64, значение — содержимое KEYSTORE_BASE64.txt
+      # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
+      # имя KEYSTORE_BASE64, значение — содержимое файла KEYSTORE_BASE64.txt
       - run: |
           mkdir -p ~/.android
           if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
@@ -38,7 +38,13 @@ jobs:
             exit 1
           fi
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
-          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey >/dev/null && echo "Подпись: постоянный ключ из секрета (валиден)"
+          FP=$(keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -v 2>/dev/null | grep -oE 'SHA-?256: [0-9A-F:]+' | head -1)
+          echo "Отпечаток ключа из секрета: $FP"
+          case "$FP" in
+            *"0C:69:01:F4:67:E0:FD:69"*) echo "Подпись: постоянный ключ FinAnalyzer (отпечаток совпал)" ;;
+            *) echo "::error::В секрете НЕ ТОТ ключ! Нужен отпечаток SHA256, начинающийся с 0C:69:01:F4:67:E0:FD:69. Пересоздайте секрет KEYSTORE_BASE64: значение = ВСЁ содержимое файла KEYSTORE_BASE64.txt (тот, что прислан в чате), без лишних символов."
+               exit 1 ;;
+          esac
       # Номер сборки заранее — он нужен и приложению, и релизу
       - id: ver
         run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
