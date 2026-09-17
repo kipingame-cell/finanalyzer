@@ -1,15 +1,18 @@
 # GitHub Actions: сборка APK + публикация релиза (для автообновления).
-# ⚠️ GitHub не даёт ботам пушить файлы прямо в .github/workflows/ (нет workflow-scopes).
-# Поэтому файл лежит здесь. ОДИН РАЗ: скопируй его содержимое в
-# .github/workflows/build.yml через веб-интерфейс (Add file → Create new file).
-# Дальше всё происходит само: пуш → сборка → релиз → приложение само обновляется.
-
+# Файл назван .txt намеренно: токен песочницы не может пушить в .github/workflows/.
+# ОДИН РАЗ через веб-интерфейс GitHub: Add file → Create new file →
+# имя: .github/workflows/build.yml → вставить всё содержимое ниже → Commit.
+# После этого каждый push в main собирает свежий APK и обновляет релиз:
+# Actions → последний зелёный запуск → Artifacts → app-debug-apk.
+# ============================================================
 name: Build APK and Release
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -24,15 +27,14 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
-      # Постоянный ключ подписи. Без него каждый билд подписывался бы НОВЫМ ключом,
-      # и Android отказывался бы ставить обновление поверх (конфликт подписей).
-      # Секрет KEYSTORE_BASE64 — это base64 от debug.keystore (см. шаги в README.md).
-      # Если секрета нет или в нём не тот ключ — падаем сразу с понятной ошибкой,
-      # чтобы зря не жечь минуты CI и не плодить битые релизы.
+      # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
+      # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
+      # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
+      # имя KEYSTORE_BASE64, значение — содержимое файла KEYSTORE_BASE64.txt
       - run: |
           mkdir -p ~/.android
           if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "::error::Секрет KEYSTORE_BASE64 пуст или не виден! Создай его: Settings → Secrets and variables → Actions → New repository secret. Значение — содержимое KEYSTORE_BASE64.txt."
+            echo "::error::Секрет KEYSTORE_BASE64 пуст или не виден! Проверьте: Settings → Secrets and variables → Actions → Repository secrets этого репозитория."
             exit 1
           fi
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
@@ -48,7 +50,7 @@ jobs:
             *) echo "::error::В секрете НЕ ТОТ ключ! В секрете лежит: ${FP:-нечитаемый файл}, sha256 файла: $KSHA. Нужен ключ из KEYSTORE_BASE64.txt (отпечаток 0C:69:01:F4…)."
                exit 1 ;;
           esac
-      # Версия релиза: v<версия-из-package.json>-b<номер-сборки>
+      # Номер сборки заранее — он нужен и приложению, и релизу
       - id: ver
         run: echo "tag=v$(node -p "require('./package.json').version")-b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       # Вшиваем полную версию со сборкой в приложение, иначе автообновление будет
@@ -121,11 +123,19 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
-      # Релиз с APK — приложение сверяется с ним и предлагает обновление
+      # Релиз для автообновления: приложение на телефоне смотрит releases/latest
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: FinAnalyzer ${{ steps.ver.outputs.tag }}
+          name: Финансовый анализатор ${{ steps.ver.outputs.tag }}
+          body: |
+            Автосборка из коммита ${{ github.sha }}.
+            Установка: скачать APK → открыть → разрешить установку из источника.
+            Приложение само предложит обновление при выходе новой версии.
           files: android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
