@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { drawDonut, drawBars } from './charts.js';
 import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
-import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, markSeen, markDismissed } from './notify.js';
+import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
 import { parsePastedText } from './parser.js';
 
 let currentTab = 'home';
@@ -282,20 +282,9 @@ function openAISettings() {
 async function openNotifications() {
   const native = isNativeAvailable();
   const enabled = native ? await isListenerEnabled() : false;
-  let suggestions = [];
-  let total = 0;
-  if (native && enabled) {
-    const r = await fetchSuggestions();
-    suggestions = r.suggestions; total = r.total || 0;
-  }
   const m = openModal(`
     <h2>🔔 Операции из уведомлений</h2>
-    ${!native ? `<div class="tip info"><div class="t-head">💡 Веб-режим</div><div class="t-body">Автоматическое чтение работает в Android-приложении. Здесь можно вставить текст уведомления вручную — распознаю сумму, магазин и категорию.</div></div>` :
-      !enabled ? `<div class="tip warn"><div class="t-head">⚠️ Доступ не выдан</div><div class="t-body">Чтобы приложение само подхватывало покупки из уведомлений банка (Сбер, Т-Банк и др.), выдайте доступ к уведомлениям.</div></div>
-      <button class="btn btn-primary btn-block" id="btn-grant">Открыть настройки доступа</button>
-      <div class="tip info" style="margin-top:10px"><div class="t-head">🔒 Пишет «Настройки с ограниченным доступом»?</div><div class="t-body">Android 13+ блокирует доступ к уведомлениям для приложений, установленных не из маркета. Решение:<br>1. Настройки телефона → Приложения → Финансовый анализатор.<br>2. Нажмите ⋮ (три точки) сверху справа → «Разрешить ограниченные настройки».<br>3. Подтвердите и вернитесь сюда — доступ к уведомлениям откроется.</div></div><div class="mt16"></div>` :
-      `<p class="muted" style="font-size:13px">Доступ есть. Перехвачено уведомлений: ${total}. Новых операций: ${suggestions.length}.</p>`}
-    <div id="sugg-list">${suggestions.map(suggHTML).join('')}</div>
+    <div id="notif-body"></div>
     <div class="card" style="margin-top:6px">
       <div class="card-title">Или вставьте текст вручную</div>
       <div class="field"><textarea id="paste" rows="3" placeholder="Напр.: Покупка 450,00 ₽, ПЯТЁРОЧКА. Баланс: 12 340 ₽"></textarea></div>
@@ -305,9 +294,6 @@ async function openNotifications() {
     <button class="btn btn-ghost btn-block" id="btn-close-n">Закрыть</button>`);
 
   $('#btn-close-n', m).onclick = closeModal;
-  const grant = $('#btn-grant', m);
-  if (grant) grant.onclick = () => openListenerSettings();
-  bindSuggestionButtons($('#sugg-list', m));
   $('#btn-parse', m).onclick = () => {
     const text = $('#paste', m).value;
     const parsed = parsePastedText(text);
@@ -316,6 +302,60 @@ async function openNotifications() {
     box.innerHTML = parsed.map(suggHTML).join('');
     bindSuggestionButtons(box);
   };
+
+  const body = $('#notif-body', m);
+  if (!native) {
+    body.innerHTML = `<div class="tip info"><div class="t-head">💡 Веб-режим</div><div class="t-body">Автоматическое чтение работает в Android-приложении. Здесь можно вставить текст уведомления вручную — распознаю сумму, магазин и категорию.</div></div>`;
+    return;
+  }
+  if (!enabled) {
+    body.innerHTML = `<div class="tip warn"><div class="t-head">⚠️ Доступ не выдан</div><div class="t-body">Чтобы приложение само подхватывало покупки из уведомлений банка (Сбер, Т-Банк и др.), выдайте доступ к уведомлениям.</div></div>
+      <button class="btn btn-primary btn-block" id="btn-grant">Открыть настройки доступа</button>
+      <div class="tip info" style="margin-top:10px"><div class="t-head">🔒 Пишет «Настройки с ограниченным доступом»?</div><div class="t-body">Android 13+ блокирует доступ к уведомлениям для приложений, установленных не из маркета. Решение:<br>1. Настройки телефона → Приложения → Финансовый анализатор.<br>2. Нажмите ⋮ (три точки) сверху справа → «Разрешить ограниченные настройки».<br>3. Подтвердите и вернитесь сюда — доступ к уведомлениям откроется.</div></div>
+      <div class="tip info" style="margin-top:10px"><div class="t-head">Выдали доступ? Нажмите сюда</div><div class="t-body">После выдачи доступа вернитесь и нажмите «Проверить снова» — экран обновится.</div></div>
+      <button class="btn btn-block" id="btn-recheck">🔄 Проверить снова</button><div class="mt16"></div>`;
+    $('#btn-grant', m).onclick = () => openListenerSettings();
+    $('#btn-recheck', m).onclick = async () => { closeModal(); openNotifications(); };
+    return;
+  }
+
+  body.innerHTML = '<p class="muted" style="font-size:13px">Загрузка…</p>';
+  await renderNotifBody();
+
+  async function renderNotifBody() {
+    const r = await fetchSuggestions();
+    const total = r.total || 0;
+    const raw = await fetchRaw();
+    let html = `<p class="muted" style="font-size:13px">Доступ есть. Перехвачено уведомлений: ${total}. Новых операций: ${r.suggestions.length}.</p>
+      <div class="flex" style="gap:8px;margin-bottom:10px">
+        <button class="btn btn-sm grow" id="n-refresh">🔄 Обновить</button>
+        <button class="btn btn-sm grow" id="n-test">🧪 Тест</button>
+        <button class="btn btn-sm btn-ghost" id="n-clear">🗑</button>
+      </div>`;
+    if (total === 0) {
+      html += `<div class="tip info"><div class="t-head">Пока пусто. Проверьте по порядку:</div><div class="t-body">1. Ловятся только <b>новые</b> уведомления, пришедшие ПОСЛЕ выдачи доступа — старые не подтянутся.<br>2. В приложении банка должны быть включены <b>push-уведомления об операциях</b> (Сбер по умолчанию шлёт SMS, а не push — включите в настройках банка).<br>3. Xiaomi / Huawei / Honor: Настройки → Приложения → Финансовый анализатор → включите «Автозапуск», а в «Контроле активности»/батарее выберите «Нет ограничений».<br><br>Нажмите 🧪 <b>Тест</b>: если появилась тестовая покупка — цепочка работает, осталось дождаться push от банка (п.1–3).</div></div>`;
+    }
+    html += `<div id="sugg-list">${r.suggestions.map(suggHTML).join('')}</div>`;
+    if (raw.length) {
+      const last = raw.slice(-8).reverse();
+      html += `<div class="card" style="margin-top:10px"><div class="card-title">Пойманные уведомления (сырые)</div>` +
+        last.map(it => `<div style="border-top:1px solid var(--line);padding:7px 2px;font-size:12px;word-break:break-word"><b style="color:var(--accent2)">${esc(it.pkg || '?')}</b><br><span class="muted">${esc(((it.title || '') + ' ' + (it.text || '')).trim().slice(0, 180) || '(пусто)')}</span></div>`).join('') + `</div>`;
+      if (total > 0 && r.suggestions.length === 0) {
+        html += `<div class="tip warn"><div class="t-head">⚠️ Ловим, но не распознаём</div><div class="t-body">Уведомления приходят, но формат вашего банка пока не знаком. Сфотографируйте этот экран и пришлите разработчику — добавим формат.</div></div>`;
+      }
+    }
+    body.innerHTML = html;
+    bindSuggestionButtons($('#sugg-list', body));
+    $('#n-refresh', body).onclick = renderNotifBody;
+    $('#n-clear', body).onclick = async () => { await clearNative(); toast('Список перехваченных очищен'); renderNotifBody(); };
+    $('#n-test', body).onclick = async () => {
+      const ok = await injectTestNotification();
+      if (!ok) { toast('Тест недоступен: обновите приложение', 3000); return; }
+      await renderNotifBody();
+      const found = $('#sugg-list', body).querySelector('.sugg-card');
+      toast(found ? '✅ Тест прошёл: цепочка работает' : 'Тест добавлен, но не распознан — пришлите скрин', 3000);
+    };
+  }
 }
 
 const suggCache = new Map();
