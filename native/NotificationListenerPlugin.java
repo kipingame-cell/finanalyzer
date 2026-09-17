@@ -48,4 +48,28 @@ public class NotificationListenerPlugin extends Plugin {
                 .edit().putString("items", "[]").apply();
         call.resolve();
     }
+
+    // Диагностика: вставляет фейковое банковское уведомление в то же хранилище,
+    // куда пишет служба. Если после этого веб-слой его видит и распознаёт —
+    // вся цепочка (служба→prefs→плагин→парсер) жива, и проблема на стороне банка.
+    @PluginMethod
+    public void injectTest(PluginCall call) {
+        try {
+            SharedPreferences sp = getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE);
+            org.json.JSONArray arr = new org.json.JSONArray(sp.getString("items", "[]"));
+            org.json.JSONObject o = new org.json.JSONObject();
+            String stamp = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                    .format(new java.util.Date());
+            o.put("pkg", "ru.sberbankmobile");
+            o.put("title", "СберБанк");
+            o.put("text", "Покупка 450,00 ₽, ТЕСТ-МАГАЗИН. Баланс: 12 340,55 ₽ (тест " + stamp + ")");
+            o.put("ts", System.currentTimeMillis());
+            arr.put(o);
+            while (arr.length() > 300) arr.remove(0);
+            sp.edit().putString("items", arr.toString()).apply();
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("inject failed", e);
+        }
+    }
 }

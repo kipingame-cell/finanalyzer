@@ -1,6 +1,6 @@
 {
   "name": "finanalyzer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Продвинутый анализатор личных финансов: категории, бюджеты, ИИ-советник, импорт операций из уведомлений банка. APK собирается GitHub Actions (см. build-apk.yml.txt).",
   "scripts": {

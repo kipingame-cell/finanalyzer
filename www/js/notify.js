@@ -66,3 +66,21 @@ export async function clearNative() {
   if (!nl) return;
   try { await nl.clearNotifications(); } catch (e) {}
 }
+
+// Сырой список перехваченных уведомлений (для диагностики на экране)
+export async function fetchRaw() {
+  const nl = getNative();
+  if (!nl) return [];
+  try {
+    const r = await nl.getNotifications();
+    const items = JSON.parse(r.items || '[]');
+    return Array.isArray(items) ? items : [];
+  } catch (e) { return []; }
+}
+
+// Диагностика: нативный модуль вставляет фейковое уведомление банка
+export async function injectTestNotification() {
+  const nl = getNative();
+  if (!nl) return false;
+  try { await nl.injectTest(); return true; } catch (e) { return false; }
+}
