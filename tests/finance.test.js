@@ -43,6 +43,7 @@ test('Ozon Bank top-up notification is recognized as income', () => {
   assert.equal(p.type, 'income');
   assert.equal(p.amount, 3000);
   assert.equal(p.bankId, 'ozon');
+  assert.equal(p.categoryId, 'other_inc');
 });
 
 test('backup removes API token, including when restoring an older backup', () => {
