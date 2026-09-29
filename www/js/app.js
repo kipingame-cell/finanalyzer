@@ -427,6 +427,7 @@ function suggHTML(p) {
       <b style="font-size:16px;color:${p.type === 'income' ? 'var(--good)' : 'var(--text)'}">${p.type === 'income' ? '+' : '−'}${S.fmtMoney(p.amount)}</b>
     </div>
     ${p.possibleDuplicate ? '<div class="muted" style="font-size:12px;color:var(--warn)">Возможный дубль: похожая операция пришла через SMS и push. Проверьте перед записью.</div>' : ''}
+    ${(p.warnings || []).map(w => `<div class="muted" style="font-size:12px;color:var(--warn)">⚠ ${esc(w)}</div>`).join('')}
     <div class="flex mt8">
       <button class="btn btn-primary btn-sm grow" data-act="add">✓ Записать</button>
       <button class="btn btn-sm" data-act="edit">Изменить</button>
@@ -448,6 +449,7 @@ function bindSuggestionButtons(container) {
         if (!p) { card.remove(); return; }
         if (act === 'add') {
           if (S.findTxByHash(hash)) { markSeen(hash); card.remove(); toast('Операция уже записана'); return; }
+          if (p.confidence === 'review' && !confirm('Парсер сомневается: ' + p.warnings.join('; ') + '. Проверьте сумму и тип. Записать как показано?')) return;
           const existingMatch = S.getState().transactions.some(t => areLikelySamePayment(p, {
             ...t, ts: Date.parse(t.date), bankId: t.bankId, last4: t.last4,
             sourceChannel: t.sourceChannel,
