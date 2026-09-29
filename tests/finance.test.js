@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseNotification, parseNotificationList } from '../www/js/parser.js';
+import { parseNotification, parseNotificationList, areLikelySamePayment } from '../www/js/parser.js';
 import * as store from '../www/js/store.js';
 
 globalThis.localStorage = {
@@ -22,6 +22,19 @@ test('balance-only and advertising amounts do not become expenses', () => {
   assert.equal(parseNotification('ru.sberbankmobile', 'Сбер', 'Скидка 500 ₽ сегодня'), null);
   assert.equal(parseNotification('ru.sberbankmobile', 'Сбер', 'Код подтверждения 1234. Покупка 500 ₽'), null);
   assert.equal(parseNotification('ru.sberbankmobile', 'Сбер', 'Покупка 500 ₽, МАГНИТ').amount, 500);
+});
+
+test('push and SMS of one payment get a warning, separate purchases stay distinct', () => {
+  const push = { pkg: 'ru.sberbankmobile', key: 'bank|1', title: 'Сбер',
+    text: 'Покупка 450 ₽ МАГНИТ Карта *1234', ts: 100000 };
+  const sms = { pkg: 'com.google.android.apps.messaging', key: 'sms|1', title: '900',
+    text: 'Покупка 450 ₽ МАГНИТ Карта *1234', ts: 110000 };
+  const [a, b] = parseNotificationList([push, sms], [], []);
+  assert.equal(a.possibleDuplicate, true);
+  assert.equal(b.possibleDuplicate, true);
+  assert.equal(areLikelySamePayment(a, { ...b, ts: 220000 }), false);
+  assert.equal(areLikelySamePayment(a, { ...b, last4: '5678' }), false);
+  assert.equal(areLikelySamePayment(a, { ...b, sourceChannel: a.sourceChannel }), false);
 });
 
 test('backup removes API token, including when restoring an older backup', () => {
