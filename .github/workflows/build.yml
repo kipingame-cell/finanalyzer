@@ -1,9 +1,4 @@
-# GitHub Actions: сборка APK + публикация релиза (для автообновления).
-# Файл назван .txt намеренно: токен песочницы не может пушить в .github/workflows/.
-# ОДИН РАЗ через веб-интерфейс GitHub: Add file → Create new file →
-# имя: .github/workflows/build.yml → вставить всё содержимое ниже → Commit.
-# После этого каждый push в main собирает свежий APK и обновляет релиз:
-# Actions → последний зелёный запуск → Artifacts → app-debug-apk.
+# GitHub Actions: подписанная release-сборка и публикация APK.
 # ============================================================
 name: Build APK and Release
 on:
@@ -27,6 +22,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
+      - run: npm test
       # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
       # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
       # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
@@ -58,6 +54,10 @@ jobs:
       - run: sed -i "s|^export const APP_VERSION = '.*';|export const APP_VERSION = '${{ steps.ver.outputs.tag }}';|" www/js/config.js
       - run: grep "APP_VERSION" www/js/config.js
       - run: npx cap add android      # создаёт android/ (в .gitignore)
+      - run: |
+          # Android требует возрастающий versionCode для обновления поверх установленной версии.
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          grep 'versionCode' android/app/build.gradle
       # ЯВНО прописываем наш ключ подписи в app/build.gradle.
       # Почему так: gradle на раннере упорно игнорирует ~/.android/debug.keystore
       # и подписывает свежесгенерированным ключом — поэтому не полагаемся на
@@ -82,9 +82,9 @@ jobs:
           s = s.replace('android {', block, 1)
           assert 'buildTypes {' in s
           s = s.replace('buildTypes {',
-                        'buildTypes {\n        debug {\n            signingConfig signingConfigs.debug\n        }', 1)
+                        'buildTypes {\n        release {\n            signingConfig signingConfigs.debug\n        }', 1)
           open(p, 'w', encoding='utf-8').write(s)
-          print('signingConfigs.debug внедрён и привязан к buildTypes.debug')
+          print('Постоянный ключ привязан к release-сборке')
           EOF
           grep -A8 "signingConfigs" android/app/build.gradle
       # Подкладываем нативный модуль чтения уведомлений и свою MainActivity
@@ -107,12 +107,12 @@ jobs:
           open(p, 'w', encoding='utf-8').write(s)
           EOF
       - run: npx cap sync android      # копирует www/ в android-проект
-      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug --stacktrace
+      - run: cd android && chmod +x gradlew && ./gradlew assembleRelease --stacktrace
       # Контроль: APK должен быть подписан нашим постоянным ключом (O=FinAnalyzer).
       # Сначала печатаем реального подписанта — чтобы в логе было видно, чей ключ.
       - run: |
           echo "=== Кем подписан собранный APK ==="
-          CERT=$(keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk 2>&1 || true)
+          CERT=$(keytool -printcert -jarfile android/app/build/outputs/apk/release/app-release.apk 2>&1 || true)
           echo "$CERT" | grep -E "Owner|SHA256|SHA-256" || echo "$CERT"
           if echo "$CERT" | grep -q "O=FinAnalyzer"; then
             echo "Подпись APK проверена: постоянный ключ"
@@ -123,8 +123,8 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
       # Релиз для автообновления: приложение на телефоне смотрит releases/latest
       - uses: softprops/action-gh-release@v2
         with:
@@ -134,7 +134,7 @@ jobs:
             Автосборка из коммита ${{ github.sha }}.
             Установка: скачать APK → открыть → разрешить установку из источника.
             Приложение само предложит обновление при выходе новой версии.
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: android/app/build/outputs/apk/release/app-release.apk
           draft: false
           prerelease: false
         env:
