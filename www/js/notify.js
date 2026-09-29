@@ -84,9 +84,17 @@ export async function getListenerDiagnostics() {
   try {
     const r = await nl.getDiagnostics();
     return { connected: !!r.connected, connectedAt: r.connectedAt || 0,
-      lastCallbackAt: r.lastCallbackAt || 0, observed: JSON.parse(r.observed || '{}'),
+      lastCallbackAt: r.lastCallbackAt || 0, lastSyncAt: r.lastSyncAt || 0,
+      observed: JSON.parse(r.observed || '{}'),
       allowed: Array.isArray(r.allowed) ? r.allowed : JSON.parse(r.allowed || '[]') };
   } catch (e) { return null; }
+}
+
+export async function syncActiveNotifications() {
+  const nl = getNative();
+  if (!nl) return -1;
+  try { return (await nl.syncActiveNotifications()).activeCount; }
+  catch (e) { return -1; }
 }
 
 export async function setAllowedSource(pkg, allowed) {
