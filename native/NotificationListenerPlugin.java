@@ -13,6 +13,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.Set;
+import java.util.HashSet;
+import org.json.JSONArray;
 
 @CapacitorPlugin(name = "NotificationListener")
 public class NotificationListenerPlugin extends Plugin {
@@ -40,6 +42,34 @@ public class NotificationListenerPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("items", sp.getString("items", "[]"));
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        SharedPreferences sp = getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE);
+        JSObject ret = new JSObject();
+        ret.put("connected", sp.getBoolean("connected", false));
+        ret.put("connectedAt", sp.getLong("connectedAt", 0));
+        ret.put("lastCallbackAt", sp.getLong("lastCallbackAt", 0));
+        ret.put("observed", sp.getString("observed", "{}"));
+        ret.put("allowed", new JSONArray(sp.getStringSet("allowedPackages", new HashSet<String>())));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void setAllowedSource(PluginCall call) {
+        String pkg = call.getString("pkg", "");
+        boolean allowed = Boolean.TRUE.equals(call.getBoolean("allowed", false));
+        SharedPreferences sp = getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE);
+        // Нельзя добавлять произвольные источники, которых служба на устройстве не видела.
+        if (!pkg.matches("[a-zA-Z0-9_.]{3,200}") ||
+                !sp.getString("observed", "{}").contains("\"" + pkg + "\"")) {
+            call.reject("unknown source"); return;
+        }
+        Set<String> sources = new HashSet<>(sp.getStringSet("allowedPackages", new HashSet<String>()));
+        if (allowed) sources.add(pkg); else sources.remove(pkg);
+        sp.edit().putStringSet("allowedPackages", sources).apply();
+        call.resolve();
     }
 
     @PluginMethod
