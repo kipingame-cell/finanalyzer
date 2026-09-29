@@ -37,6 +37,14 @@ test('push and SMS of one payment get a warning, separate purchases stay distinc
   assert.equal(areLikelySamePayment(a, { ...b, sourceChannel: a.sourceChannel }), false);
 });
 
+test('Ozon Bank top-up notification is recognized as income', () => {
+  const p = parseNotification('ru.ozon.app.android', 'Ozon Банк',
+    'Пополнение через СБП на 3 000 ₽. Баланс 3 072.26 ₽');
+  assert.equal(p.type, 'income');
+  assert.equal(p.amount, 3000);
+  assert.equal(p.bankId, 'ozon');
+});
+
 test('backup removes API token, including when restoring an older backup', () => {
   store.initStore();
   store.setSetting('aiToken', 'secret-test-value');
