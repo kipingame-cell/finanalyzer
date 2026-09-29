@@ -4,8 +4,8 @@ import * as S from './store.js';
 import { drawDonut, drawBars } from './charts.js';
 import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
-import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
-import { parsePastedText } from './parser.js';
+import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, getListenerDiagnostics, syncActiveNotifications, setAllowedSource, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
+import { parsePastedText, areLikelySamePayment } from './parser.js';
 
 let currentTab = 'home';
 let opsFilter = 'all';      // all | income | expense
@@ -99,7 +99,7 @@ function renderHome() {
     </div>
     ${accountStripHTML()}
     <div class="card hero">
-      <div class="bal-label">Баланс · ${esc(balLabel)}</div>
+      <div class="bal-label">Учтённый итог · ${esc(balLabel)}</div>
       <div class="bal-value">${S.fmtMoney(bal)}</div>
       ${selAcc && selAcc.balance != null ? `<div class="muted" style="font-size:12.5px;margin-top:-6px;margin-bottom:8px">● по данным банка: ${S.fmtMoney(selAcc.balance)}</div>` : ''}
       <div class="row">
@@ -302,7 +302,7 @@ function openAISettings() {
     <div class="field"><label>API токен</label><input id="f-token" type="password" value="${esc(s.aiToken)}" placeholder="sk-..."></div>
     <div class="field"><label>Базовый URL (OpenAI-совместимый)</label><input id="f-base" value="${esc(s.aiBaseUrl)}" placeholder="https://api.openai.com/v1"></div>
     <div class="field"><label>Модель</label><input id="f-model" value="${esc(s.aiModel)}" placeholder="gpt-4o-mini"></div>
-    <p class="muted" style="font-size:12.5px">Примеры: OpenAI — https://api.openai.com/v1 · OpenRouter — https://openrouter.ai/api/v1 · Groq — https://api.groq.com/openai/v1. Токен хранится только на этом устройстве.</p>
+    <p class="muted" style="font-size:12.5px">Ключ действует до закрытия приложения и не входит в бэкап. При запросе финансовая сводка и вопрос отправляются выбранному API. Вставляйте ключ только если согласны с отправкой этих данных.</p>
     <div class="flex"><button class="btn btn-block" id="ai-cancel">Отмена</button><button class="btn btn-primary btn-block" id="ai-save">Сохранить</button></div>`);
   $('#ai-cancel', m).onclick = closeModal;
   $('#ai-save', m).onclick = () => {
@@ -360,17 +360,28 @@ async function openNotifications() {
   await renderNotifBody();
 
   async function renderNotifBody() {
+    const activeCount = await syncActiveNotifications();
     const r = await fetchSuggestions();
     const total = r.total || 0;
     const raw = await fetchRaw();
+    const diag = await getListenerDiagnostics();
     let html = `<p class="muted" style="font-size:13px">Доступ есть. Перехвачено уведомлений: ${total}. Новых операций: ${r.suggestions.length}.</p>
       <div class="flex" style="gap:8px;margin-bottom:10px">
         <button class="btn btn-sm grow" id="n-refresh">🔄 Обновить</button>
-        <button class="btn btn-sm grow" id="n-test">🧪 Тест</button>
+        <button class="btn btn-sm grow" id="n-test">🧪 Тест парсера</button>
         <button class="btn btn-sm btn-ghost" id="n-clear">🗑</button>
       </div>`;
+    if (diag) {
+      const sources = Object.entries(diag.observed || {}).sort((a, b) => b[1].lastAt - a[1].lastAt).slice(0, 20);
+      html += `<div class="card" style="margin-bottom:10px"><div class="card-title">Диагностика системного слушателя</div>
+        <p class="muted" style="font-size:12px">Служба: ${diag.connected ? 'подключена' : 'не подключена'} · активных уведомлений при проверке: ${activeCount < 0 ? 'нет доступа к службе' : activeCount}<br>Последний callback: ${diag.lastCallbackAt ? esc(new Date(diag.lastCallbackAt).toLocaleString('ru-RU')) : 'не было'} · сверка шторки: ${diag.lastSyncAt ? esc(new Date(diag.lastSyncAt).toLocaleString('ru-RU')) : 'не было'}</p>
+        <p class="muted" style="font-size:12px">Ниже только имена приложений и количество уведомлений; текст чужих уведомлений не сохраняется. Совершите новую покупку или дождитесь уведомления банка и нажмите «Обновить».</p>
+        ${sources.length ? sources.map(([pkg, data]) => `<div class="legend-row"><span class="legend-name" style="word-break:break-all">${esc(pkg)} · ${data.count || 0}</span><button class="btn btn-sm" data-source="${esc(pkg)}" data-allowed="${diag.allowed.includes(pkg) ? '1' : '0'}">${diag.allowed.includes(pkg) ? 'Выключить' : 'Ловить'}</button></div>`).join('') : '<p class="muted">Пока нет сигналов от Android. Проверьте доступ и фоновую работу приложения.</p>'}
+        <p class="muted" style="font-size:12px">Нажимайте «Ловить» только для своего банка или приложения SMS: выбранный источник сможет сохранять сообщения с суммами для распознавания.</p>
+      </div>`;
+    }
     if (total === 0) {
-      html += `<div class="tip info"><div class="t-head">Пока пусто. Проверьте по порядку:</div><div class="t-body">1. Ловятся только <b>новые</b> уведомления, пришедшие ПОСЛЕ выдачи доступа — старые не подтянутся.<br>2. Понимаются push от банковских приложений и <b>SMS</b> (Сбер — номер 900, ВТБ и др.), которые приходят как уведомления SMS-приложения.<br>3. Xiaomi / Huawei / Honor: Настройки → Приложения → Финансовый анализатор → включите «Автозапуск», а в «Контроле активности»/батарее выберите «Нет ограничений».<br><br>Нажмите 🧪 <b>Тест</b>: если появилась тестовая покупка — цепочка работает, осталось дождаться операции по карте.</div></div>`;
+      html += `<div class="tip info"><div class="t-head">Пока пусто. Проверьте по порядку:</div><div class="t-body">1. Ловятся только <b>новые</b> уведомления после выдачи доступа.<br>2. Дождитесь push банка или банковского SMS, нажмите «Обновить» и проверьте список источников выше.<br>3. Если служба не подключена или сигналов нет, проверьте доступ, автозапуск и ограничения батареи.<br><br>«Тест парсера» добавляет учебный пример напрямую. Он <b>не проверяет</b> доставку реальных уведомлений Android.</div></div>`;
     }
     html += `<div id="sugg-list">${r.suggestions.map(suggHTML).join('')}</div>`;
     if (raw.length) {
@@ -378,10 +389,15 @@ async function openNotifications() {
       html += `<div class="card" style="margin-top:10px"><div class="card-title">Пойманные уведомления (сырые)</div>` +
         last.map(it => `<div style="border-top:1px solid var(--line);padding:7px 2px;font-size:12px;word-break:break-word"><b style="color:var(--accent2)">${esc(it.pkg || '?')}</b><br><span class="muted">${esc(((it.title || '') + ' ' + (it.text || '')).trim().slice(0, 180) || '(пусто)')}</span></div>`).join('') + `</div>`;
       if (total > 0 && r.suggestions.length === 0) {
-        html += `<div class="tip warn"><div class="t-head">⚠️ Ловим, но не распознаём</div><div class="t-body">Уведомления приходят, но формат вашего банка пока не знаком. Сфотографируйте этот экран и пришлите разработчику — добавим формат.</div></div>`;
+        html += `<div class="tip warn"><div class="t-head">⚠️ Ловим, но не распознаём</div><div class="t-body">Формат банка пока не знаком. Перед отправкой примера разработчику закройте имена, номера карт и остатки.</div></div>`;
       }
     }
     body.innerHTML = html;
+    body.querySelectorAll('[data-source]').forEach(btn => btn.onclick = async () => {
+      const ok = await setAllowedSource(btn.dataset.source, btn.dataset.allowed !== '1');
+      toast(ok ? 'Источник обновлён. Дождитесь нового уведомления.' : 'Не удалось изменить источник');
+      await renderNotifBody();
+    });
     bindSuggestionButtons($('#sugg-list', body));
     $('#n-refresh', body).onclick = renderNotifBody;
     $('#n-clear', body).onclick = async () => { await clearNative(); toast('Список перехваченных очищен'); renderNotifBody(); };
@@ -390,7 +406,7 @@ async function openNotifications() {
       if (!ok) { toast('Тест недоступен: обновите приложение', 3000); return; }
       await renderNotifBody();
       const found = $('#sugg-list', body).querySelector('.sugg-card');
-      toast(found ? '✅ Тест прошёл: цепочка работает' : 'Тест добавлен, но не распознан — пришлите скрин', 3000);
+      toast(found ? 'Парсер работает; доставку Android проверьте по диагностике' : 'Тестовый пример не распознан', 3500);
     };
   }
 }
@@ -410,6 +426,8 @@ function suggHTML(p) {
       </div>
       <b style="font-size:16px;color:${p.type === 'income' ? 'var(--good)' : 'var(--text)'}">${p.type === 'income' ? '+' : '−'}${S.fmtMoney(p.amount)}</b>
     </div>
+    ${p.possibleDuplicate ? '<div class="muted" style="font-size:12px;color:var(--warn)">Возможный дубль: похожая операция пришла через SMS и push. Проверьте перед записью.</div>' : ''}
+    ${(p.warnings || []).map(w => `<div class="muted" style="font-size:12px;color:var(--warn)">⚠ ${esc(w)}</div>`).join('')}
     <div class="flex mt8">
       <button class="btn btn-primary btn-sm grow" data-act="add">✓ Записать</button>
       <button class="btn btn-sm" data-act="edit">Изменить</button>
@@ -430,8 +448,16 @@ function bindSuggestionButtons(container) {
         const p = suggCache.get(hash);
         if (!p) { card.remove(); return; }
         if (act === 'add') {
+          if (S.findTxByHash(hash)) { markSeen(hash); card.remove(); toast('Операция уже записана'); return; }
+          if (p.confidence === 'review' && !confirm('Парсер сомневается: ' + p.warnings.join('; ') + '. Проверьте сумму и тип. Записать как показано?')) return;
+          const existingMatch = S.getState().transactions.some(t => areLikelySamePayment(p, {
+            ...t, ts: Date.parse(t.date), bankId: t.bankId, last4: t.last4,
+            sourceChannel: t.sourceChannel,
+          }));
+          if (existingMatch && !confirm('Похожая операция из другого канала уже записана. Добавить ещё одну?')) return;
           const acc = S.ensureAccount({ id: p.accountId, name: p.accountName, bankId: p.bankId });
-          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash });
+          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash,
+            bankId: p.bankId, last4: p.last4, sourceChannel: p.sourceChannel });
           if (p.balance != null) S.setAccountBalance(acc.id, p.balance);
           markSeen(hash);
           card.remove(); toast('Записано: ' + acc.name); refreshBadge(); renderCurrent(false);
@@ -505,11 +531,17 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
     const patch = {
       type, amount, categoryId, accountId,
       note: $('#f-note', m).value.trim(),
-      date: new Date($('#f-date', m).value || Date.now()).toISOString(),
+      date: new Date($('#f-date', m).value || src.ts || Date.now()).toISOString(),
       source: src.source || 'manual',
     };
+    if (!existing && src.sourceChannel && S.getState().transactions.some(t =>
+      areLikelySamePayment({ ...src, ts: Date.parse(patch.date) }, { ...t, ts: Date.parse(t.date) }))) {
+      if (!confirm('Похожая операция из другого канала уже записана. Добавить ещё одну?')) return;
+    }
     if (existing) { S.updateTransaction(existing.id, patch); toast('Сохранено'); }
-    else { if (src.hash) patch.hash = src.hash; S.addTransaction(patch); toast('Добавлено'); }
+    else { if (src.hash) patch.hash = src.hash;
+      if (src.source === 'notification') Object.assign(patch, { bankId: src.bankId, last4: src.last4, sourceChannel: src.sourceChannel });
+      try { S.addTransaction(patch); } catch (e) { toast(e.message); return; } toast('Добавлено'); }
     closeModal();
     if (onSaved) onSaved(); else renderCurrent(false);
   };
