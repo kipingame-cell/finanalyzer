@@ -99,7 +99,7 @@ function renderHome() {
     </div>
     ${accountStripHTML()}
     <div class="card hero">
-      <div class="bal-label">Баланс · ${esc(balLabel)}</div>
+      <div class="bal-label">Учтённый итог · ${esc(balLabel)}</div>
       <div class="bal-value">${S.fmtMoney(bal)}</div>
       ${selAcc && selAcc.balance != null ? `<div class="muted" style="font-size:12.5px;margin-top:-6px;margin-bottom:8px">● по данным банка: ${S.fmtMoney(selAcc.balance)}</div>` : ''}
       <div class="row">
@@ -302,7 +302,7 @@ function openAISettings() {
     <div class="field"><label>API токен</label><input id="f-token" type="password" value="${esc(s.aiToken)}" placeholder="sk-..."></div>
     <div class="field"><label>Базовый URL (OpenAI-совместимый)</label><input id="f-base" value="${esc(s.aiBaseUrl)}" placeholder="https://api.openai.com/v1"></div>
     <div class="field"><label>Модель</label><input id="f-model" value="${esc(s.aiModel)}" placeholder="gpt-4o-mini"></div>
-    <p class="muted" style="font-size:12.5px">Примеры: OpenAI — https://api.openai.com/v1 · OpenRouter — https://openrouter.ai/api/v1 · Groq — https://api.groq.com/openai/v1. Токен хранится только на этом устройстве.</p>
+    <p class="muted" style="font-size:12.5px">Ключ действует до закрытия приложения и не входит в бэкап. При запросе финансовая сводка и вопрос отправляются выбранному API. Вставляйте ключ только если согласны с отправкой этих данных.</p>
     <div class="flex"><button class="btn btn-block" id="ai-cancel">Отмена</button><button class="btn btn-primary btn-block" id="ai-save">Сохранить</button></div>`);
   $('#ai-cancel', m).onclick = closeModal;
   $('#ai-save', m).onclick = () => {
@@ -378,7 +378,7 @@ async function openNotifications() {
       html += `<div class="card" style="margin-top:10px"><div class="card-title">Пойманные уведомления (сырые)</div>` +
         last.map(it => `<div style="border-top:1px solid var(--line);padding:7px 2px;font-size:12px;word-break:break-word"><b style="color:var(--accent2)">${esc(it.pkg || '?')}</b><br><span class="muted">${esc(((it.title || '') + ' ' + (it.text || '')).trim().slice(0, 180) || '(пусто)')}</span></div>`).join('') + `</div>`;
       if (total > 0 && r.suggestions.length === 0) {
-        html += `<div class="tip warn"><div class="t-head">⚠️ Ловим, но не распознаём</div><div class="t-body">Уведомления приходят, но формат вашего банка пока не знаком. Сфотографируйте этот экран и пришлите разработчику — добавим формат.</div></div>`;
+        html += `<div class="tip warn"><div class="t-head">⚠️ Ловим, но не распознаём</div><div class="t-body">Формат банка пока не знаком. Перед отправкой примера разработчику закройте имена, номера карт и остатки.</div></div>`;
       }
     }
     body.innerHTML = html;
@@ -430,6 +430,7 @@ function bindSuggestionButtons(container) {
         const p = suggCache.get(hash);
         if (!p) { card.remove(); return; }
         if (act === 'add') {
+          if (S.findTxByHash(hash)) { markSeen(hash); card.remove(); toast('Операция уже записана'); return; }
           const acc = S.ensureAccount({ id: p.accountId, name: p.accountName, bankId: p.bankId });
           S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash });
           if (p.balance != null) S.setAccountBalance(acc.id, p.balance);
@@ -505,11 +506,11 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
     const patch = {
       type, amount, categoryId, accountId,
       note: $('#f-note', m).value.trim(),
-      date: new Date($('#f-date', m).value || Date.now()).toISOString(),
+      date: new Date($('#f-date', m).value || src.ts || Date.now()).toISOString(),
       source: src.source || 'manual',
     };
     if (existing) { S.updateTransaction(existing.id, patch); toast('Сохранено'); }
-    else { if (src.hash) patch.hash = src.hash; S.addTransaction(patch); toast('Добавлено'); }
+    else { if (src.hash) patch.hash = src.hash; try { S.addTransaction(patch); } catch (e) { toast(e.message); return; } toast('Добавлено'); }
     closeModal();
     if (onSaved) onSaved(); else renderCurrent(false);
   };
