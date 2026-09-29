@@ -78,6 +78,24 @@ export async function fetchRaw() {
   } catch (e) { return []; }
 }
 
+export async function getListenerDiagnostics() {
+  const nl = getNative();
+  if (!nl) return null;
+  try {
+    const r = await nl.getDiagnostics();
+    return { connected: !!r.connected, connectedAt: r.connectedAt || 0,
+      lastCallbackAt: r.lastCallbackAt || 0, observed: JSON.parse(r.observed || '{}'),
+      allowed: Array.isArray(r.allowed) ? r.allowed : JSON.parse(r.allowed || '[]') };
+  } catch (e) { return null; }
+}
+
+export async function setAllowedSource(pkg, allowed) {
+  const nl = getNative();
+  if (!nl) return false;
+  try { await nl.setAllowedSource({ pkg, allowed }); return true; }
+  catch (e) { return false; }
+}
+
 // Диагностика: нативный модуль вставляет фейковое уведомление банка
 export async function injectTestNotification() {
   const nl = getNative();
