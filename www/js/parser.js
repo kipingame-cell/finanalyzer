@@ -90,6 +90,9 @@ export function isFinancialText(text) {
   if (!AMOUNT_RE.test(text)) return false;
   const low = text.toLowerCase();
   if (/код |код:|одноразов|подтверждени|парол|никому не сообщайте/i.test(low)) return false;
+  // Одной суммы недостаточно: остаток, реклама и лимит не являются операцией.
+  if (!INCOME_WORDS.concat(EXPENSE_WORDS).some(w => low.includes(w)) &&
+      !/плат[её]ж|поступлен|списан|зачислен|оплат[а-яё]*|перев[её]л/i.test(low)) return false;
   if (/одобрен|предодобрен|кредитный лимит|оформите|успейте|акция|скидк/i.test(low) && !INCOME_WORDS.concat(EXPENSE_WORDS).some(w => low.includes(w))) return false;
   if (/(остаток|баланс|доступно)[: ]/i.test(low) && !INCOME_WORDS.concat(EXPENSE_WORDS).some(w => low.includes(w))) return false;
   return true;
@@ -101,7 +104,7 @@ function detectType(text) {
   // «Перевод 500р от ИВАН И.» — приход; «перевод 40p OZON» — расход
   if (/перевод/.test(low) && /\sот\s+[a-zа-яё0-9]/i.test(low)) return 'income';
   if (/списание|списан|покупка|оплата|оплачено|перевод|снятие|выдача наличных|плат[её]ж|удержан|комиссия|payment|purchase/.test(low)) return 'expense';
-  return 'expense'; // по умолчанию трата
+  return null;
 }
 
 const MERCH_TAIL_RE = /\s*(баланс|доступно|остаток|карта|сч[её]т|лимит|сбп|sbp|кэшбэк|бонусы|комиссия|по курсу).*$/i;
@@ -168,6 +171,7 @@ export function parseNotification(pkg, title, text) {
   const amount = extractAmount(full);
   if (!amount) return null;
   const type = detectType(full);
+  if (!type) return null;
   const bank = detectBank(pkg, title, full);
   const last4 = extractLast4(full);
   const balance = extractBalance(full);
@@ -195,6 +199,9 @@ export function parseNotificationList(items, seenHashes, dismissedHashes) {
   for (const it of items) {
     const p = parseNotification(it.pkg, it.title, it.text);
     if (!p) continue;
+    // Одинаковый текст в двух разных покупках не означает одну операцию.
+    // key + postTime остаются стабильными при повторном чтении очереди.
+    p.hash = notifHash(it.pkg, it.key || '', String(it.ts || '') + '|' + p.hash);
     if (seenHashes.includes(p.hash) || dismissedHashes.includes(p.hash)) continue;
     p.ts = it.ts || Date.now();
     out.push(p);
@@ -211,11 +218,11 @@ export function parsePastedText(text) {
   const out = [];
   for (const c of chunks) {
     const p = parseNotification('manual-paste', '', c);
-    if (p) out.push(p);
+    if (p) { p.hash = 'manual_' + Date.now() + '_' + Math.random().toString(36).slice(2); out.push(p); }
   }
   if (!out.length) {
     const p = parseNotification('manual-paste', '', text);
-    if (p) out.push(p);
+    if (p) { p.hash = 'manual_' + Date.now() + '_' + Math.random().toString(36).slice(2); out.push(p); }
   }
   return out;
 }
