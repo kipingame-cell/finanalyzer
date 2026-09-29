@@ -30,6 +30,9 @@ export const BANKS = [
   { id: 'domrf',   name: 'ДОМ.РФ',         pkgs: ['ru.dom.rfbank'], senders: ['дом.рф', 'domrf'], kw: ['дом.рф', 'dom.rf'] },
 ];
 const UNKNOWN_BANK = { id: 'other', name: 'Банк' };
+const SMS_PACKAGES = new Set(['com.google.android.apps.messaging', 'com.android.messaging',
+  'com.android.mms', 'com.samsung.android.messaging', 'ru.samsung.android.messaging',
+  'com.miui.smsextra']);
 
 function detectBank(pkg, title, fullText) {
   const p = (pkg || '').toLowerCase();
@@ -202,6 +205,7 @@ export function parseNotificationList(items, seenHashes, dismissedHashes) {
     // Одинаковый текст в двух разных покупках не означает одну операцию.
     // key + postTime остаются стабильными при повторном чтении очереди.
     p.hash = notifHash(it.pkg, it.key || '', String(it.ts || '') + '|' + p.hash);
+    p.sourceChannel = SMS_PACKAGES.has(it.pkg) ? 'sms' : 'push';
     if (seenHashes.includes(p.hash) || dismissedHashes.includes(p.hash)) continue;
     p.ts = it.ts || Date.now();
     out.push(p);
@@ -209,7 +213,27 @@ export function parseNotificationList(items, seenHashes, dismissedHashes) {
   // новые сверху, дедуп по хэшу внутри пачки
   const uniq = new Map();
   out.forEach(p => uniq.set(p.hash, p));
-  return [...uniq.values()].sort((a, b) => b.ts - a.ts);
+  const candidates = [...uniq.values()].sort((a, b) => b.ts - a.ts);
+  for (const p of candidates) {
+    if (candidates.some(other => other !== p && areLikelySamePayment(p, other)))
+      p.possibleDuplicate = true;
+  }
+  return candidates;
+}
+
+// Разные каналы одного банка могут сообщать об одной операции. Не удаляем
+// черновик автоматически: две одинаковые покупки подряд тоже возможны.
+export function areLikelySamePayment(a, b) {
+  if (!a || !b || a.bankId === 'other' || a.bankId !== b.bankId ||
+      a.sourceChannel === b.sourceChannel || !a.sourceChannel || !b.sourceChannel ||
+      a.type !== b.type || a.amount !== b.amount ||
+      Math.abs(Number(a.ts) - Number(b.ts)) > 90000) return false;
+  if (a.last4 && b.last4 && a.last4 !== b.last4) return false;
+  if (!a.last4 && !b.last4) {
+    const normalize = s => String(s || '').toLowerCase().replace(/[^a-zа-яё0-9]/g, '');
+    if (!normalize(a.note) || normalize(a.note) !== normalize(b.note)) return false;
+  }
+  return true;
 }
 
 // Разбор вставленного вручную текста (может быть несколько уведомлений построчно/абзацами)
