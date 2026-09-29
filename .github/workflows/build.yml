@@ -4,6 +4,8 @@ name: Build APK and Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,7 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - run: npm install
+      - run: npm ci
       - run: npm test
       # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
       # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
@@ -127,6 +129,7 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
       # Релиз для автообновления: приложение на телефоне смотрит releases/latest
       - uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: Финансовый анализатор ${{ steps.ver.outputs.tag }}
