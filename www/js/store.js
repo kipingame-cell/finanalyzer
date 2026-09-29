@@ -37,6 +37,8 @@ export function initStore() {
   const blank = blankState();
   for (const k of Object.keys(blank)) if (state[k] === undefined) state[k] = blank[k];
   for (const k of Object.keys(blank.settings)) if (state.settings[k] === undefined) state.settings[k] = blank.settings[k];
+  // Старые версии сохраняли ключ в открытом виде. Удаляем его при миграции.
+  state.settings.aiToken = '';
   // миграция: счета — все старые операции относим к основному счёту
   if (!state.accounts.length) state.accounts = blank.accounts;
   state.transactions.forEach(t => { if (!t.accountId) t.accountId = 'main'; });
@@ -47,7 +49,8 @@ export function initStore() {
 }
 
 export function save() {
-  localStorage.setItem(LS_KEY, JSON.stringify(state));
+  const persisted = { ...state, settings: { ...state.settings, aiToken: '' } };
+  localStorage.setItem(LS_KEY, JSON.stringify(persisted));
   listeners.forEach(fn => fn());
 }
 
@@ -79,6 +82,9 @@ export function deleteCategory(id) {
 }
 
 export function addTransaction(tx) {
+  if (!Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0 ||
+      !['income', 'expense'].includes(tx.type)) throw new Error('Неверная операция');
+  if (tx.hash && findTxByHash(tx.hash)) throw new Error('Операция уже записана');
   tx.id = 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   tx.amount = Math.round(Math.abs(Number(tx.amount)) * 100) / 100;
   state.transactions.unshift(tx);
@@ -206,11 +212,16 @@ export function topMerchants(mk, limit = 5, accountId) {
 
 // ---------- Бэкап ----------
 export function exportJSON() {
-  return JSON.stringify(state, null, 2);
+  return JSON.stringify({ ...state, settings: { ...state.settings, aiToken: '' } }, null, 2);
 }
 export function importJSON(text) {
   const data = JSON.parse(text);
-  if (!data.transactions || !data.categories) throw new Error('Неверный формат файла');
+  if (!Array.isArray(data.transactions) || !Array.isArray(data.categories) ||
+      !data.settings || typeof data.settings !== 'object' ||
+      data.transactions.some(t => !['income', 'expense'].includes(t.type) ||
+        !Number.isFinite(t.amount) || t.amount <= 0 || !Number.isFinite(Date.parse(t.date))))
+    throw new Error('Неверный формат файла');
+  data.settings.aiToken = '';
   state = data;
   initMergeFix();
   save();
