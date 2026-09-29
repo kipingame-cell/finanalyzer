@@ -2,7 +2,7 @@
 // Знает форматы: Сбер (push и SMS от 900), ВТБ, Т-Банк, Альфа, Яндекс Банк,
 // Ozon Банк, WB Банк, Райффайзен, Газпромбанк, Совкомбанк, Почта Банк, МТС и др.
 // Работает и с нативным слушателем уведомлений, и с вставленным вручную текстом.
-import { CATEGORY_KEYWORDS } from './config.js';
+import { CATEGORY_KEYWORDS, DEFAULT_CATEGORIES } from './config.js';
 
 // ---------- Справочник банков ----------
 // pkgs — package name приложения банка; senders — отправитель SMS/push (title уведомления);
@@ -157,6 +157,7 @@ export function guessCategory(text, type) {
   const low = ' ' + (text || '').toLowerCase() + ' ';
   let best = null, bestLen = 0;
   for (const [catId, words] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (!DEFAULT_CATEGORIES.some(c => c.id === catId && c.type === type)) continue;
     for (const w of words) {
       if (low.includes(w) && w.length > bestLen) { best = catId; bestLen = w.length; }
     }
