@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { drawDonut, drawBars } from './charts.js';
 import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
-import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, getListenerDiagnostics, setAllowedSource, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
+import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, getListenerDiagnostics, syncActiveNotifications, setAllowedSource, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
 import { parsePastedText, areLikelySamePayment } from './parser.js';
 
 let currentTab = 'home';
@@ -360,6 +360,7 @@ async function openNotifications() {
   await renderNotifBody();
 
   async function renderNotifBody() {
+    const activeCount = await syncActiveNotifications();
     const r = await fetchSuggestions();
     const total = r.total || 0;
     const raw = await fetchRaw();
@@ -373,7 +374,7 @@ async function openNotifications() {
     if (diag) {
       const sources = Object.entries(diag.observed || {}).sort((a, b) => b[1].lastAt - a[1].lastAt).slice(0, 20);
       html += `<div class="card" style="margin-bottom:10px"><div class="card-title">Диагностика системного слушателя</div>
-        <p class="muted" style="font-size:12px">Служба: ${diag.connected ? 'подключена' : 'не подключена'} · последний сигнал: ${diag.lastCallbackAt ? esc(new Date(diag.lastCallbackAt).toLocaleString('ru-RU')) : 'не было'}</p>
+        <p class="muted" style="font-size:12px">Служба: ${diag.connected ? 'подключена' : 'не подключена'} · активных уведомлений при проверке: ${activeCount < 0 ? 'нет доступа к службе' : activeCount}<br>Последний callback: ${diag.lastCallbackAt ? esc(new Date(diag.lastCallbackAt).toLocaleString('ru-RU')) : 'не было'} · сверка шторки: ${diag.lastSyncAt ? esc(new Date(diag.lastSyncAt).toLocaleString('ru-RU')) : 'не было'}</p>
         <p class="muted" style="font-size:12px">Ниже только имена приложений и количество уведомлений; текст чужих уведомлений не сохраняется. Совершите новую покупку или дождитесь уведомления банка и нажмите «Обновить».</p>
         ${sources.length ? sources.map(([pkg, data]) => `<div class="legend-row"><span class="legend-name" style="word-break:break-all">${esc(pkg)} · ${data.count || 0}</span><button class="btn btn-sm" data-source="${esc(pkg)}" data-allowed="${diag.allowed.includes(pkg) ? '1' : '0'}">${diag.allowed.includes(pkg) ? 'Выключить' : 'Ловить'}</button></div>`).join('') : '<p class="muted">Пока нет сигналов от Android. Проверьте доступ и фоновую работу приложения.</p>'}
         <p class="muted" style="font-size:12px">Нажимайте «Ловить» только для своего банка или приложения SMS: выбранный источник сможет сохранять сообщения с суммами для распознавания.</p>
