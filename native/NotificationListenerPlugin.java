@@ -3,6 +3,9 @@ package com.finanalyzer.app;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.ComponentName;
+import android.os.Build;
+import android.service.notification.NotificationListenerService;
 
 import androidx.core.app.NotificationManagerCompat;
 
@@ -51,8 +54,21 @@ public class NotificationListenerPlugin extends Plugin {
         ret.put("connected", sp.getBoolean("connected", false));
         ret.put("connectedAt", sp.getLong("connectedAt", 0));
         ret.put("lastCallbackAt", sp.getLong("lastCallbackAt", 0));
+        ret.put("lastSyncAt", sp.getLong("lastSyncAt", 0));
         ret.put("observed", sp.getString("observed", "{}"));
         ret.put("allowed", new JSONArray(sp.getStringSet("allowedPackages", new HashSet<String>())));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void syncActiveNotifications(PluginCall call) {
+        int count = BankNotificationService.syncActiveNotifications();
+        if (count < 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            NotificationListenerService.requestRebind(
+                    new ComponentName(getContext(), BankNotificationService.class));
+        }
+        JSObject ret = new JSObject();
+        ret.put("activeCount", count);
         call.resolve(ret);
     }
 
