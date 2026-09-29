@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 // Системная служба: ловит уведомления (банки, кошельки) и складывает в SharedPreferences.
 // Веб-слой забирает их через NotificationListenerPlugin и сам решает, что из этого трата.
 public class BankNotificationService extends NotificationListenerService {
+    private static volatile BankNotificationService activeService;
     private static final Set<String> BANK_PACKAGES = new HashSet<>(Arrays.asList(
             "ru.sberbankmobile", "com.idamob.tinkoff.android", "ru.alfabank.mobile.android",
             "ru.vtb24.mobilebanking.android", "ru.ftc.faktura.raiffeisen", "ru.openbank",
@@ -33,20 +34,40 @@ public class BankNotificationService extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
+        activeService = this;
         getSharedPreferences("bank_notifs", MODE_PRIVATE).edit()
                 .putLong("connectedAt", System.currentTimeMillis())
                 .putBoolean("connected", true).apply();
+        syncActiveNotifications();
     }
 
     @Override
     public void onListenerDisconnected() {
+        if (activeService == this) activeService = null;
         getSharedPreferences("bank_notifs", MODE_PRIVATE).edit()
                 .putBoolean("connected", false).apply();
         super.onListenerDisconnected();
     }
 
+    // Системный callback не повторяет уведомления, опубликованные до выдачи доступа.
+    // Сверяем активные уведомления при подключении и по запросу с экрана диагностики.
+    public static int syncActiveNotifications() {
+        BankNotificationService service = activeService;
+        if (service == null) return -1;
+        try {
+            StatusBarNotification[] active = service.getActiveNotifications();
+            if (active == null) return 0;
+            for (StatusBarNotification sbn : active) service.captureNotification(sbn, true);
+            return active.length;
+        } catch (Exception e) { return -1; }
+    }
+
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
+        captureNotification(sbn, false);
+    }
+
+    private void captureNotification(StatusBarNotification sbn, boolean fromSync) {
         try {
             SharedPreferences sp = getSharedPreferences("bank_notifs", MODE_PRIVATE);
             String pkg = sbn.getPackageName();
@@ -54,11 +75,25 @@ public class BankNotificationService extends NotificationListenerService {
             JSONObject observed = new JSONObject(sp.getString("observed", "{}"));
             JSONObject source = observed.optJSONObject(pkg);
             if (source == null) source = new JSONObject();
-            source.put("count", source.optInt("count") + 1);
+            JSONArray seenIds = new JSONArray(sp.getString("seenIds", "[]"));
+            String notificationId = sbn.getKey() + "|" + sbn.getPostTime();
+            boolean newId = true;
+            for (int i = 0; i < seenIds.length(); i++) {
+                if (notificationId.equals(seenIds.optString(i))) { newId = false; break; }
+            }
+            if (newId) {
+                source.put("count", source.optInt("count") + 1);
+                seenIds.put(notificationId);
+                while (seenIds.length() > 500) seenIds.remove(0);
+            }
             source.put("lastAt", System.currentTimeMillis());
             observed.put(pkg, source);
-            sp.edit().putString("observed", observed.toString())
-                    .putLong("lastCallbackAt", System.currentTimeMillis()).apply();
+            SharedPreferences.Editor diagnostic = sp.edit()
+                    .putString("observed", observed.toString())
+                    .putString("seenIds", seenIds.toString());
+            if (fromSync) diagnostic.putLong("lastSyncAt", System.currentTimeMillis());
+            else diagnostic.putLong("lastCallbackAt", System.currentTimeMillis());
+            diagnostic.apply();
             Notification n = sbn.getNotification();
             if (n == null) return;
             Bundle e = n.extras;
