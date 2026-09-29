@@ -27,13 +27,38 @@ public class BankNotificationService extends NotificationListenerService {
     private static final Set<String> SMS_PACKAGES = new HashSet<>(Arrays.asList(
             "com.google.android.apps.messaging", "com.android.messaging", "com.android.mms",
             "com.samsung.android.messaging", "ru.samsung.android.messaging", "com.miui.smsextra"));
-    private static final Pattern AMOUNT = Pattern.compile("\\d[\\d ,.\\u00a0\\u202f]*\\s*(?:₽|руб|[рp](?![a-zа-я]))", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-    private static final Pattern OPERATION = Pattern.compile("покупк|оплат|списан|зачислен|пополнен|поступлен|перевод|снятие|плат[её]ж|возврат|кэшбэк|зарплат|аванс|комисси|payment|purchase", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern AMOUNT = Pattern.compile("\\d[\\d ,.\\u00a0\\u202f]*\\s*(?:₽|руб|rub|rur|[рp](?![a-zа-я]))", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern SECRET = Pattern.compile("одноразов|подтверждени|парол|никому не сообщайте|код[: ]", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    @Override
+    public void onListenerConnected() {
+        super.onListenerConnected();
+        getSharedPreferences("bank_notifs", MODE_PRIVATE).edit()
+                .putLong("connectedAt", System.currentTimeMillis())
+                .putBoolean("connected", true).apply();
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        getSharedPreferences("bank_notifs", MODE_PRIVATE).edit()
+                .putBoolean("connected", false).apply();
+        super.onListenerDisconnected();
+    }
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
         try {
+            SharedPreferences sp = getSharedPreferences("bank_notifs", MODE_PRIVATE);
+            String pkg = sbn.getPackageName();
+            // Диагностика сохраняет только имя пакета и время, без содержимого чужих уведомлений.
+            JSONObject observed = new JSONObject(sp.getString("observed", "{}"));
+            JSONObject source = observed.optJSONObject(pkg);
+            if (source == null) source = new JSONObject();
+            source.put("count", source.optInt("count") + 1);
+            source.put("lastAt", System.currentTimeMillis());
+            observed.put(pkg, source);
+            sp.edit().putString("observed", observed.toString())
+                    .putLong("lastCallbackAt", System.currentTimeMillis()).apply();
             Notification n = sbn.getNotification();
             if (n == null) return;
             Bundle e = n.extras;
@@ -42,15 +67,23 @@ public class BankNotificationService extends NotificationListenerService {
             String text = str(e.getCharSequence(Notification.EXTRA_TEXT));
             String big = str(e.getCharSequence(Notification.EXTRA_BIG_TEXT));
             if (big.length() > text.length()) text = big;
+            CharSequence[] lines = e.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+            if (lines != null) {
+                StringBuilder joined = new StringBuilder();
+                for (CharSequence line : lines) if (line != null) joined.append(line).append(' ');
+                if (joined.length() > text.length()) text = joined.toString().trim();
+            }
+            if (text.isEmpty()) text = str(e.getCharSequence(Notification.EXTRA_SUB_TEXT));
+            if (text.isEmpty()) text = str(n.tickerText);
             if (title.isEmpty() && text.isEmpty()) return;
-            String pkg = sbn.getPackageName();
-            if (!BANK_PACKAGES.contains(pkg) && !SMS_PACKAGES.contains(pkg)) return;
+            boolean selected = sp.getStringSet("allowedPackages", new HashSet<String>()).contains(pkg);
+            if (!BANK_PACKAGES.contains(pkg) && !SMS_PACKAGES.contains(pkg) && !selected) return;
             // Для SMS-пакетов исключаем личную переписку: только известный отправитель банка.
-            if (SMS_PACKAGES.contains(pkg) && !title.matches("(?i).*(?:900|сбер|tinkoff|тинькофф|т-банк|втб|альфа|газпромбанк|райффайзен|мтс банк|почта банк|совкомбанк|ozon банк|яндекс банк).*")) return;
+            if (SMS_PACKAGES.contains(pkg) && !selected && !title.matches("(?i).*(?:900|сбер|tinkoff|тинькофф|т-банк|втб|альфа|газпромбанк|райффайзен|мтс банк|почта банк|совкомбанк|ozon банк|яндекс банк).*")) return;
             String full = title + " " + text;
-            if (!AMOUNT.matcher(full).find() || !OPERATION.matcher(full).find() || SECRET.matcher(full).find()) return;
+            // Оставляем неизвестные форматы операций для диагностики в приложении.
+            if (!AMOUNT.matcher(full).find() || SECRET.matcher(full).find()) return;
 
-            SharedPreferences sp = getSharedPreferences("bank_notifs", MODE_PRIVATE);
             JSONArray arr = new JSONArray(sp.getString("items", "[]"));
             JSONObject o = new JSONObject();
             o.put("pkg", pkg);
