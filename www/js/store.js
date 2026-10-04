@@ -20,6 +20,7 @@ function blankState() {
       monthStart: 1,
       currency: '₽',
       notifSourcesEnabled: true,
+      notifAutoImport: false,
     },
     seenNotifHashes: [],       // уже обработанные уведомления (дедупликация)
     dismissedNotifHashes: [],  // пользователь отклонил
@@ -79,6 +80,10 @@ export function deleteCategory(id) {
 }
 
 export function addTransaction(tx) {
+  if (tx.hash) {
+    const existing = findTxByHash(tx.hash);
+    if (existing) return existing;
+  }
   tx.id = 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   tx.amount = Math.round(Math.abs(Number(tx.amount)) * 100) / 100;
   state.transactions.unshift(tx);

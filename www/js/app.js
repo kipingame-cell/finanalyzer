@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { drawDonut, drawBars } from './charts.js';
 import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
-import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed } from './notify.js';
+import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed, importSuggestions } from './notify.js';
 import { parsePastedText } from './parser.js';
 
 let currentTab = 'home';
@@ -321,6 +321,8 @@ async function openNotifications() {
   const enabled = native ? await isListenerEnabled() : false;
   const m = openModal(`
     <h2>🔔 Операции из уведомлений</h2>
+    <label class="field"><span><input type="checkbox" id="auto-import" ${S.getSettings().notifAutoImport ? 'checked' : ''}> Автоматически записывать операции</span></label>
+    <p class="muted">При открытом приложении — проверка каждые 2 секунды. Уведомления из фона импортируются при возвращении.</p>
     <div id="notif-body"></div>
     <div class="card" style="margin-top:6px">
       <div class="card-title">Или вставьте текст вручную</div>
@@ -330,6 +332,7 @@ async function openNotifications() {
     </div>
     <button class="btn btn-ghost btn-block" id="btn-close-n">Закрыть</button>`);
 
+  $('#auto-import', m).onchange = e => { S.setSetting('notifAutoImport', e.target.checked); refreshBadge(); };
   $('#btn-close-n', m).onclick = closeModal;
   $('#btn-parse', m).onclick = () => {
     const text = $('#paste', m).value;
@@ -430,6 +433,7 @@ function bindSuggestionButtons(container) {
         const p = suggCache.get(hash);
         if (!p) { card.remove(); return; }
         if (act === 'add') {
+          if (S.findTxByHash(hash)) { card.remove(); return; }
           const acc = S.ensureAccount({ id: p.accountId, name: p.accountName, bankId: p.bankId });
           S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash });
           if (p.balance != null) S.setAccountBalance(acc.id, p.balance);
@@ -444,13 +448,23 @@ function bindSuggestionButtons(container) {
   });
 }
 
+let refreshingNotifications = false;
 async function refreshBadge() {
-  if (!isNativeAvailable()) return;
-  if (!(await isListenerEnabled())) return;
-  const r = await fetchSuggestions();
-  pendingSuggCount = r.suggestions.length;
-  const btn = $('#btn-notif');
-  if (btn) btn.innerHTML = `🔔 ${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : ''}`;
+  if (refreshingNotifications || document.hidden || !isNativeAvailable()) return;
+  refreshingNotifications = true;
+  try {
+    if (!(await isListenerEnabled())) return;
+    const r = await fetchSuggestions();
+    if (S.getSettings().notifAutoImport && importSuggestions(r.suggestions)) renderCurrent(false);
+    const st = S.getState();
+    const pending = r.suggestions.filter(p => !st.seenNotifHashes.includes(p.hash));
+    pendingSuggCount = pending.length;
+    const btn = $('#btn-notif');
+    if (btn) btn.innerHTML = `🔔 ${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : ''}`;
+    const list = $('#sugg-list');
+    if (list) { list.innerHTML = pending.map(suggHTML).join(''); bindSuggestionButtons(list); }
+  } catch (error) { console.error('Notification import failed', error); }
+  finally { refreshingNotifications = false; }
 }
 
 // ============================================================
@@ -767,7 +781,9 @@ function boot() {
   renderCurrent();
   setTimeout(autoUpdateCheck, 2500);
   refreshBadge();
-  setInterval(refreshBadge, 30000);
+  setInterval(refreshBadge, 2000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshBadge(); });
+  window.addEventListener('focus', refreshBadge);
 }
 
 boot();
