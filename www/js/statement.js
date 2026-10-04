@@ -85,9 +85,47 @@ function parseCsv(text) {
   }
   return null;
 }
+// Yandex PDF tables can interleave description, operation date, posting date,
+// amount in operation currency and amount in account currency on the same line.
+function parseYandexBlocks(text) {
+  const start = /(?:исходящий перевод(?:\s+СБП)?|входящий перевод(?:\s+СБП)?|оплата товаров и услуг|возврат(?:\s+за)?(?:\s+оплаты|\s+покупки|\s+товаров и услуг)|пополнение сч[её]та|зачисление денежных средств|выплата процентов|начисление процентов|снятие наличных)/gi;
+  const markers=[...text.matchAll(start)];
+  if(!markers.length)return null;
+  const datesRe=/\b\d{2}\.\d{2}\.\d{4}\b/g;
+  // Activate only for the observed two-date bank table, not ordinary pasted messages.
+  if(!markers.some((m,i)=>(text.slice(m.index,markers[i+1]?.index??text.length).match(datesRe)||[]).length>=2))return null;
+  const operations=[],rejected=[];
+  for(let i=0;i<markers.length;i++) {
+    const raw=text.slice(markers[i].index,markers[i+1]?.index??text.length).trim();
+    const reject=reason=>rejected.push({raw,reason});
+    const dates=[...raw.matchAll(datesRe)];
+    if(dates.length!==2){reject('Ожидались две даты одной операции; проверьте разбиение строк');continue;}
+    if(!dates.every(d=>statementDate(d[0]))){reject('Некорректная дата операции');continue;}
+    if(/USD|EUR|[$€]/i.test(raw)){reject('Разные валюты: требуется сверка суммы в валюте счёта');continue;}
+    if(/отмен[а-яё]*|отклон[а-яё]*|не выполнен/i.test(raw)){reject('Операция не завершена');continue;}
+    const amountRe=/([+−–-]?\s*(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)[.,]\d{2})\s*(?:₽|руб\.?|RUB|RUR|[рp])(?=$|[^a-zа-яё])/gi;
+    const amounts=[...raw.matchAll(amountRe)];
+    if(amounts.length!==2){reject('Ожидались две суммы в колонках выписки');continue;}
+    const values=amounts.map(m=>money(m[1]));
+    if(values.some(v=>v===null||v===0)||values[0]!==values[1]){reject('Суммы в двух колонках различаются — нужна проверка');continue;}
+    const type=/^(?:входящий|возврат|пополнение|зачисление|выплата|начисление)/i.test(markers[i][0])?'income':'expense';
+    const signed=amounts.some(m=>/^[+−–-]/.test(m[1].trim()));
+    if(signed&&((values[0]<0)!==(type==='expense'))){reject('Знак суммы противоречит типу операции');continue;}
+    const time=raw.match(/(?:\sв\s+|\s)(\d{2}:\d{2})(?::(\d{2}))?(?!\d)/);
+    const date=statementDate(dates[0][0]+(time?' '+time[1]+(time[2]?':'+time[2]:''):''));
+    let note=raw.replace(amountRe,' ').replace(datesRe,' ').replace(/\sв\s+\d{2}:\d{2}(?::\d{2})?/g,' ');
+    note=norm(note.replace(/\*\d{4}\b/g,''));
+    const op=operation(date,Math.abs(values[0]),type,note,raw);
+    if(op){op.postingDate=statementDate(dates[1][0]);operations.push(op);}else reject('Некорректная операция');
+  }
+  return {operations,rejected,format:'yandex-pdf'};
+}
+
 export function parseStatementText(text) {
   if(String(text).length>10000000)throw new Error('Слишком большой текст. Разделите выписку по периодам.');
-  const tabular=parseCsv(String(text));if(tabular)return tabular;
+  text=String(text).replace(/[\u00a0\u202f]/g,' ');
+  const tabular=parseCsv(text);if(tabular)return tabular;
+  const yandex=parseYandexBlocks(text);if(yandex)return yandex;
   const operations=[],rejected=[];let block='';
   const flush=()=>{
     if(!block)return;
@@ -118,6 +156,7 @@ export function parseStatementText(text) {
     else if(block){flush();block='';}
   }
   flush();
+  if(!operations.length&&!rejected.length&&text.trim())rejected.push({raw:text.trim(),reason:'Текст извлечён, но формат строк не распознан'});
   return {operations,rejected,format:'text'};
 }
 export function prepareStatement(result,accountId,state=getState()) {
@@ -142,7 +181,7 @@ export function importStatement(rows,accountId) {
       if(st.transactions.some(t=>t.statementKey===row.statementKey))continue;
       st.transactions.unshift({id:'st_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
         date:row.date,type:row.type,amount:row.amount,note:row.note,categoryId:row.categoryId,accountId,
-        source:'statement',statementKey:row.statementKey});count++;
+        source:'statement',statementKey:row.statementKey,postingDate:row.postingDate});count++;
     }
     if(count)save();return count;
   }catch(error){Object.assign(st,snapshot);throw error;}

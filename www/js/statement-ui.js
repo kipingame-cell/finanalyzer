@@ -25,7 +25,7 @@ export function openStatementImport({openModal,closeModal,esc,renderCurrent,toas
       result=parseStatementText($('#st-text').value);
       rows=prepareStatement(result,$('#st-account').value);
       selected=new Set(rows.flatMap((r,i)=>!r.duplicate&&!r.possibleDuplicate?[i]:[]));page=0;
-      $('#st-status').textContent=`Распознано: ${rows.length}. Не разобрано блоков/строк: ${result.rejected.length}.`;
+      $('#st-status').textContent=rows.length ? `Распознано: ${rows.length}. Не разобрано блоков/строк: ${result.rejected.length}.` : 'Текст прочитан, но операции не распознаны. Посмотрите неразобранные строки ниже.';
       render();
     }catch(error){$('#st-status').textContent=error.message;}
   };
@@ -53,7 +53,7 @@ export function openStatementImport({openModal,closeModal,esc,renderCurrent,toas
     $('#st-preview').innerHTML=`<div class="card mt8"><b>Выбрано ${chosen.length} из ${rows.length}</b><p>Приход: ${esc(S.fmtMoney(income))}<br>Расход: ${esc(S.fmtMoney(expense))}</p>
       <p class="muted">Сверьте суммы и количество операций с выпиской. Совпадения с уже записанными операциями сняты с выбора; проверьте их вручную. Импорт выписки не меняет банковский остаток.</p>
       <button class="btn btn-sm" id="st-none">Снять выбор</button> <button class="btn btn-sm" id="st-safe">Выбрать без совпадений</button></div>
-      ${rows.slice(page*100,(page+1)*100).map((r,j)=>{const i=page*100+j;return `<label class="card" style="display:block"><input type="checkbox" data-row="${i}" ${selected.has(i)?'checked':''} ${r.duplicate?'disabled':''}> ${esc(r.date.slice(0,10))} · <b>${r.type==='income'?'+':'−'}${esc(S.fmtMoney(r.amount))}</b><br>${esc(r.note)}${r.duplicate?'<br><b>Уже импортировано</b>':r.possibleDuplicate?'<br><b>Возможный повтор — проверьте</b>':''}<details><summary>Исходная строка</summary><p style="white-space:pre-wrap;word-break:break-word">${esc(r.raw)}</p></details></label>`;}).join('')}
+      ${rows.slice(page*100,(page+1)*100).map((r,j)=>{const i=page*100+j;return `<label class="card" style="display:block"><input type="checkbox" data-row="${i}" ${selected.has(i)?'checked':''} ${r.duplicate?'disabled':''}> ${esc(r.date.slice(0,10))}${r.postingDate&&r.postingDate.slice(0,10)!==r.date.slice(0,10)?' (проведено '+esc(r.postingDate.slice(0,10))+')':''} · <b>${r.type==='income'?'+':'−'}${esc(S.fmtMoney(r.amount))}</b><br>${esc(r.note)}${r.duplicate?'<br><b>Уже импортировано</b>':r.possibleDuplicate?'<br><b>Возможный повтор — проверьте</b>':''}<details><summary>Исходная строка</summary><p style="white-space:pre-wrap;word-break:break-word">${esc(r.raw)}</p></details></label>`;}).join('')}
       <div class="flex"><button class="btn" id="st-prev" ${page===0?'disabled':''}>Назад</button><span class="grow">${page+1} / ${Math.max(1,Math.ceil(rows.length/100))}</span><button class="btn" id="st-next" ${(page+1)*100>=rows.length?'disabled':''}>Далее</button></div>
       ${result.rejected.length?`<details class="mt8"><summary>Не распознано: ${result.rejected.length}</summary><textarea readonly rows="10" style="width:100%" aria-label="Нераспознанные строки">${esc(result.rejected.map(r=>r.reason+'\n'+r.raw).join('\n\n'))}</textarea></details>`:''}
       <button class="btn btn-primary btn-block mt8" id="st-import" ${!chosen.length?'disabled':''}>Записать выбранные операции (${chosen.length})</button>`;

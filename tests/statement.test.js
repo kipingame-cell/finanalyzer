@@ -60,3 +60,30 @@ test('dated balance and multi-amount text cannot become a purchase',()=>{
  assert.equal(parseStatementText('01.10.2026 Остаток -500 ₽').operations.length,0);
  assert.equal(parseStatementText('01.10.2026 Покупка -100 ₽ комиссия 10 ₽').operations.length,0);
 });
+// Synthetic data reproduces the observed PDF layout; no personal screenshot data.
+const yandexLayout = `Исходящий перевод СБП, Получатель 21.04.2026
+21.04.2026 -400,00 ₽ -400,00 ₽
+Тестовый П., +7 900 000-00-00, в 12:03
+Сбербанк
+Оплата товаров и услуг DIXY- 19.04.2026
+21.04.2026 *3222 -289,90 ₽ -289,90 ₽
+78325D в 13:54`;
+test('Yandex interleaved two-date two-amount rows',()=>{
+ const r=parseStatementText(yandexLayout);assert.equal(r.format,'yandex-pdf');assert.equal(r.operations.length,2);assert.equal(r.rejected.length,0);
+ assert.equal(r.operations[0].amount,400);assert.equal(r.operations[1].amount,289.9);
+ assert.equal(r.operations[1].date,'2026-04-19T10:54:00.000Z');assert.equal(r.operations[1].postingDate,'2026-04-21T09:00:00.000Z');
+ assert.match(r.operations[1].note,/DIXY/);assert.match(r.operations[1].note,/78325D/);
+ assert.ok(!r.operations[1].note.includes('289,90'));
+});
+test('Yandex same layout flattened to one line',()=>assert.equal(parseStatementText(yandexLayout.replace(/\n/g,' ')).operations.length,2));
+test('Yandex positive incoming transfer and unicode minus',()=>{
+ const r=parseStatementText('Входящий перевод СБП 01.10.2026\n01.10.2026 +1 234,56 ₽ +1 234,56 ₽ в 10:20\n'+yandexLayout.replace(/-/g,'−'));
+ assert.equal(r.operations.length,3);assert.equal(r.operations[0].type,'income');assert.equal(r.operations[0].amount,1234.56);
+});
+test('Yandex unequal monetary columns remain visible for review',()=>{
+ const r=parseStatementText(yandexLayout.replace('-400,00 ₽ -400,00 ₽','-400,00 ₽ -401,00 ₽'));
+ assert.equal(r.operations.length,1);assert.equal(r.rejected.length,1);
+});
+test('unknown extracted text is reported rather than zero/zero',()=>{
+ const r=parseStatementText('Неизвестный шаблон выписки с текстом');assert.equal(r.operations.length,0);assert.equal(r.rejected.length,1);
+});
