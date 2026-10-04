@@ -1,12 +1,13 @@
 {
   "name": "finanalyzer",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "Продвинутый анализатор личных финансов: категории, бюджеты, ИИ-советник, импорт операций из уведомлений банка. APK собирается GitHub Actions (см. build-apk.yml.txt).",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "build": "node -e \"console.log('static www, nothing to build')\""
+    "build": "node -e \"console.log('static www, nothing to build')\"",
+    "capacitor:sync:before": "node scripts/set-android-version.cjs"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.2",
