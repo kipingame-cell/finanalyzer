@@ -24,3 +24,4 @@ if (!xml.includes('android.permission.READ_SMS')) {
   xml = xml.replace('<application', '<uses-permission android:name="android.permission.READ_SMS" />\n    <application');
 }
 fs.writeFileSync(manifest, xml);
+require('./bundle-pdf.cjs');

@@ -3,3 +3,5 @@ android/
 dist/
 *.log
 # trigger: пересборка с постоянным ключом подписи
+
+www/vendor/pdfjs/

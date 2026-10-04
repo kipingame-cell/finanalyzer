@@ -6,6 +6,7 @@ import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
 import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed, importSuggestions, importSmsHistory, getBackgroundStatus, openBackgroundSettings } from './notify.js';
 import { parsePastedText } from './parser.js';
+import { openStatementImport } from './statement-ui.js';
 
 let currentTab = 'home';
 let opsFilter = 'all';      // all | income | expense
@@ -582,6 +583,7 @@ function renderMore() {
   view().innerHTML = `
     <div class="page-head"><h1>Ещё</h1></div>
     <div class="card row-list">
+      <div class="menu-row" id="m-statement"><span class="mr-ico">📄</span><div class="mr-text">Выписка Яндекс Банка<div class="mr-sub">Импорт PDF / CSV за весь период</div></div>›</div>
       <div class="menu-row" id="m-notif"><span class="mr-ico">🔔</span><div class="mr-text">Операции из уведомлений<div class="mr-sub">Сбер, ВТБ, Т-Банк, Яндекс, Ozon, WB и др.</div></div>${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : '›'}</div>
       <div class="menu-row" id="m-accs"><span class="mr-ico">💳</span><div class="mr-text">Счета и карты<div class="mr-sub">${S.getAccounts().length} шт.</div></div>›</div>
       <div class="menu-row" id="m-cats"><span class="mr-ico">🏷️</span><div class="mr-text">Категории и бюджеты<div class="mr-sub">${S.getCategories().length} категорий</div></div>›</div>
@@ -594,6 +596,7 @@ function renderMore() {
       <div class="menu-row" id="m-wipe"><span class="mr-ico">🗑️</span><div class="mr-text" style="color:#fda4af">Сбросить все данные</div></div>
     </div>
     <p class="muted" style="font-size:12px;text-align:center">${APP_NAME} v${APP_VERSION}<br>Все данные хранятся только на вашем устройстве.</p>`;
+  $('#m-statement').onclick = () => openStatementImport({openModal,closeModal,esc,renderCurrent,toast});
   $('#m-notif').onclick = openNotifications;
   $('#m-accs').onclick = openAccounts;
   $('#m-cats').onclick = openCategories;
