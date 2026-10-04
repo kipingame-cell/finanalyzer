@@ -1,3 +1,5 @@
+import {guessCategory, unassigned} from './categories.js';
+import {bankDateKey} from './dates.js';
 import { isOwnTransfer } from './transfers.js';
 export { isOwnTransfer } from './transfers.js';
 // Хранилище данных: операции, категории, настройки. Всё локально (localStorage).
@@ -29,24 +31,38 @@ function blankState() {
   };
 }
 
-export function initStore() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    state = raw ? JSON.parse(raw) : blankState();
-  } catch (e) {
-    state = blankState();
+function normalizeState(data) {
+  if(!data || !Array.isArray(data.transactions) || !Array.isArray(data.categories))throw new Error('Повреждён формат данных. Исходные данные сохранены; восстановите JSON-бэкап.');
+  const blank=blankState();
+  for(const k of Object.keys(blank))if(data[k]===undefined)data[k]=blank[k];
+  if(!data.settings || typeof data.settings!=='object' || !Array.isArray(data.accounts))throw new Error('Неверный формат настроек или счетов');
+  for(const k of Object.keys(blank.settings))if(data.settings[k]===undefined)data.settings[k]=blank.settings[k];
+  if(!Array.isArray(data.seenNotifHashes)||!Array.isArray(data.dismissedNotifHashes))throw new Error('Неверный формат истории импорта');
+  if(!data.accounts.length)data.accounts=blank.accounts;
+  const accountIds=new Set(data.accounts.map(a=>a.id));
+  data.categories=data.categories.filter(c=>c&& !['other_exp','other_inc'].includes(c.id));
+  const ids=new Set(data.categories.map(c=>c.id));
+  for(const c of DEFAULT_CATEGORIES)if(!ids.has(c.id))data.categories.push({...c});
+  const cats=new Map(data.categories.map(c=>[c.id,c]));
+  for(const t of data.transactions) {
+    if(!t || typeof t!=='object')throw new Error('Неверная запись операции');
+    if(!t.accountId)t.accountId='main';
+    if(!accountIds.has(t.accountId)){data.accounts.push({id:t.accountId,name:'Восстановленный счёт '+t.accountId,bankId:'manual',balance:null});accountIds.add(t.accountId);}
+    const guessed=guessCategory(t.note,t.type);
+    const missing=!cats.has(t.categoryId)||['other_exp','other_inc'].includes(t.categoryId)||String(t.categoryId).startsWith('uncategorized');
+    const wrongBank=t.categoryId==='market'&&['transfer_in','transfer_out'].includes(guessed)&&!t.categoryManual;
+    if(missing||wrongBank)t.categoryId=guessed;
+    if(typeof t.amount==='string'&&Number.isFinite(Number(t.amount)))t.amount=Number(t.amount);
   }
-  // миграция: добить недостающие поля
-  const blank = blankState();
-  for (const k of Object.keys(blank)) if (state[k] === undefined) state[k] = blank[k];
-  for (const k of Object.keys(blank.settings)) if (state.settings[k] === undefined) state.settings[k] = blank.settings[k];
-  // миграция: счета — все старые операции относим к основному счёту
-  if (!state.accounts.length) state.accounts = blank.accounts;
-  state.transactions.forEach(t => { if (!t.accountId) t.accountId = 'main'; });
-  // миграция: добавить новые стандартные категории, которых нет у пользователя
-  const knownIds = new Set(state.categories.map(c => c.id));
-  for (const c of DEFAULT_CATEGORIES) if (!knownIds.has(c.id)) state.categories.push(JSON.parse(JSON.stringify(c)));
-  save();
+  return data;
+}
+export function initStore() {
+  const raw=localStorage.getItem(LS_KEY);
+  let data;
+  try{data=raw?JSON.parse(raw):blankState();}catch{throw new Error('Не удалось прочитать данные. Они не удалены. Восстановите JSON-бэкап.');}
+  // Preserve the pre-migration history once; never wipe unreadable user data.
+  if(raw&&!data.categorySchemaVersion)localStorage.setItem(LS_KEY+'_before_160',raw);
+  state=normalizeState(data);state.categorySchemaVersion=1;save();
 }
 
 export function save() {
@@ -64,7 +80,7 @@ export function getCategories(type) {
   return type ? state.categories.filter(c => c.type === type) : state.categories;
 }
 export function getCategory(id) {
-  return state.categories.find(c => c.id === id) || state.categories.find(c => c.id === (id === 'other_inc' ? 'other_inc' : 'other_exp')) || state.categories[0];
+  return state.categories.find(c => c.id === id) || state.categories.find(c => c.id === (id === 'other_inc' ? 'uncategorized_inc' : 'uncategorized_exp')) || state.categories[0];
 }
 export function addCategory(cat) {
   cat.id = 'c_' + Date.now().toString(36);
@@ -72,34 +88,71 @@ export function addCategory(cat) {
   return cat;
 }
 export function updateCategory(id, patch) {
-  const c = state.categories.find(x => x.id === id);
-  if (c) { Object.assign(c, patch); save(); }
+ const c=state.categories.find(x=>x.id===id);if(!c)return;
+ if(patch.type&&patch.type!==c.type&&state.transactions.some(t=>t.categoryId===id))throw new Error('У категории есть операции. Создайте отдельную категорию другого типа.');
+ const old={...c};Object.assign(c,patch);try{save();}catch(e){Object.assign(c,old);throw e;}
 }
 export function deleteCategory(id) {
-  state.categories = state.categories.filter(c => c.id !== id);
-  state.transactions.forEach(t => { if (t.categoryId === id) t.categoryId = 'other_exp'; });
-  save();
+ if(id.startsWith('uncategorized'))throw new Error('Это статус операций, а не пользовательская категория');
+ const old=state.categories,changed=state.transactions.filter(t=>t.categoryId===id);
+ state.categories=old.filter(c=>c.id!==id);changed.forEach(t=>t.categoryId=unassigned(t.type));
+ try{save();}catch(e){state.categories=old;changed.forEach(t=>t.categoryId=id);throw e;}
 }
 
-export function addTransaction(tx) {
-  if (tx.hash) {
-    const existing = findTxByHash(tx.hash);
-    if (existing) return existing;
-  }
-  tx.id = 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  tx.amount = Math.round(Math.abs(Number(tx.amount)) * 100) / 100;
-  state.transactions.unshift(tx);
-  save();
-  return tx;
+function validateTransaction(t) {
+  if(!['income','expense'].includes(t.type)||!Number.isFinite(Number(t.amount))||Number(t.amount)<=0||!Number.isFinite(Date.parse(t.date)))throw new Error('Проверьте сумму, дату и тип операции');
+  if(!Number.isSafeInteger(Math.round(Number(t.amount)*100)))throw new Error('Слишком большая сумма');
 }
-export function updateTransaction(id, patch) {
-  const t = state.transactions.find(x => x.id === id);
-  if (t) { Object.assign(t, patch); save(); }
+export function addTransaction(tx) {
+  if(tx.hash){const existing=findTxByHash(tx.hash);if(existing)return existing;}
+  validateTransaction(tx);
+  tx={...tx,id:'t_'+crypto.randomUUID(),amount:Math.round(Number(tx.amount)*100)/100,accountId:tx.accountId||'main'};
+  state.transactions.unshift(tx);
+  try{save();}catch(e){state.transactions.shift();throw e;}return tx;
+}
+export function updateTransaction(id,patch) {
+ const t=state.transactions.find(x=>x.id===id);if(!t)return;
+ const next={...t,...patch};validateTransaction(next);next.amount=Math.round(Number(next.amount)*100)/100;
+ const old={...t};Object.assign(t,next);
+ try{save();}catch(e){for(const k of Object.keys(t))delete t[k];Object.assign(t,old);throw e;}
 }
 export function deleteTransaction(id) {
-  state.transactions = state.transactions.filter(t => t.id !== id);
-  save();
+ const old=state.transactions;state.transactions=old.filter(t=>t.id!==id);
+ try{save();}catch(e){state.transactions=old;throw e;}
 }
+export function classifyTransactions(ids,categoryId) {
+ const cat=state.categories.find(c=>c.id===categoryId);if(!cat)throw new Error('Выберите категорию');
+ const selected=new Set(ids),rows=state.transactions.filter(t=>selected.has(t.id));
+ if(rows.some(t=>t.type!==cat.type))throw new Error('Выберите операции одного типа: доходы или расходы');
+ const old=rows.map(t=>[t,t.categoryId,t.categoryManual]);
+ for(const t of rows){t.categoryId=cat.id;t.categoryManual=true;}
+ try{save();}catch(e){for(const [t,c,m] of old){t.categoryId=c;t.categoryManual=m;}throw e;}return rows.length;
+}
+export function setExcluded(ids,value) {
+ const selected=new Set(ids),old=state.transactions.filter(t=>selected.has(t.id)).map(t=>[t,t.excluded]);
+ for(const [t] of old)t.excluded=Boolean(value);
+ try{save();}catch(e){for(const [t,v] of old)t.excluded=v;throw e;}return old.length;
+}
+export function isCounted(t) {
+ return !t.excluded && ['income','expense'].includes(t.type) && Number.isFinite(Number(t.amount)) && Number(t.amount)>0 && Number.isFinite(Date.parse(t.date));
+}
+export function duplicateCandidates() {
+ const groups=new Map(),ids=new Set();
+ for(const t of state.transactions) {
+  if(!isCounted(t))continue;
+  const key=[bankDateKey(t.date),t.type,Math.round(Number(t.amount)*100)].join('|');
+  if(!groups.has(key))groups.set(key,[]);groups.get(key).push(t);
+ }
+ for(const rows of groups.values()) {
+  // Different import sources or exact same text/time merit review, never auto-delete.
+  if(rows.length<2)continue;
+  const sources=new Set(rows.map(t=>t.source||'manual'));
+  if(sources.size>1){rows.forEach(t=>ids.add(t.id));continue;}
+  const seen=new Map();for(const t of rows){const key=t.date+'|'+t.accountId+'|'+t.note;if(seen.has(key)){ids.add(t.id);ids.add(seen.get(key));}else seen.set(key,t.id);}
+ }
+ return ids;
+}
+
 export function findTxByHash(hash) {
   return state.transactions.find(t => t.hash && t.hash === hash);
 }
@@ -153,7 +206,7 @@ export function setOwnTransfers(ids, value) {
 }
 export function transferTotals(mk, accountId) {
   const totals = {income: 0, expense: 0, count: 0};
-  for (const t of txInMonth(mk, accountId)) if (isOwnTransfer(t) && ['income','expense'].includes(t.type)) {
+  for (const t of txInMonth(mk, accountId)) if (isOwnTransfer(t) && isCounted(t)) {
     totals[t.type] += Math.round(Number(t.amount) * 100); totals.count++;
   }
   totals.income /= 100; totals.expense /= 100; return totals;
@@ -161,8 +214,7 @@ export function transferTotals(mk, accountId) {
 
 // ---------- Статистика ----------
 export function monthKey(d) {
-  const dt = new Date(d);
-  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  return bankDateKey(d).slice(0,7);
 }
 export function currentMonthKey() { return monthKey(new Date()); }
 
@@ -178,7 +230,7 @@ export function txInMonth(mk, accountId) {
 export function monthTotals(mk, accountId) {
   let income = 0, expense = 0;
   for (const t of txInMonth(mk, accountId)) {
-    if (isOwnTransfer(t)) continue;
+    if (!isCounted(t) || isOwnTransfer(t)) continue;
     if (t.type === 'income') income += Math.round(Number(t.amount)*100);
     else if (t.type === 'expense') expense += Math.round(Number(t.amount)*100);
   }
@@ -187,14 +239,14 @@ export function monthTotals(mk, accountId) {
 
 export function balance(accountId) {
   let b = 0;
-  for (const t of state.transactions) if (txAccountOk(t, accountId) && ['income','expense'].includes(t.type)) b += (t.type === 'income' ? 1 : -1) * Math.round(Number(t.amount)*100);
+  for (const t of state.transactions) if (txAccountOk(t, accountId) && isCounted(t)) b += (t.type === 'income' ? 1 : -1) * Math.round(Number(t.amount)*100);
   return b / 100;
 }
 
 export function byCategory(mk, type = 'expense', accountId) {
   const map = {};
   for (const t of txInMonth(mk, accountId)) {
-    if (t.type !== type || isOwnTransfer(t)) continue;
+    if (t.type !== type || !isCounted(t) || isOwnTransfer(t)) continue;
     map[t.categoryId] = (map[t.categoryId] || 0) + Number(t.amount);
   }
   return Object.entries(map)
@@ -205,9 +257,9 @@ export function byCategory(mk, type = 'expense', accountId) {
 export function lastNMonths(n, accountId, endMonth = currentMonthKey()) {
   const res = [];
   const [year, month] = endMonth.split('-').map(Number);
-  const now = new Date(year, month - 1, 1);
+  const now = new Date(Date.UTC(year,month-1,1,12));
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-i,1,12));
     const mk = monthKey(d);
     res.push({ mk, label: d.toLocaleString('ru-RU', { month: 'short' }), ...monthTotals(mk, accountId) });
   }
@@ -223,7 +275,7 @@ export function avgMonthlyExpense(months = 3) {
 export function topMerchants(mk, limit = 5, accountId) {
   const map = {};
   for (const t of txInMonth(mk, accountId)) {
-    if (t.type !== 'expense' || isOwnTransfer(t) || !t.note) continue;
+    if (t.type !== 'expense' || !isCounted(t) || isOwnTransfer(t) || !t.note) continue;
     const key = t.note.trim();
     map[key] = (map[key] || 0) + Number(t.amount);
   }
@@ -236,16 +288,9 @@ export function exportJSON() {
   return JSON.stringify(state, null, 2);
 }
 export function importJSON(text) {
-  const data = JSON.parse(text);
-  if (!data.transactions || !data.categories) throw new Error('Неверный формат файла');
-  state = data;
-  initMergeFix();
-  save();
-}
-function initMergeFix() {
-  const blank = blankState();
-  for (const k of Object.keys(blank)) if (state[k] === undefined) state[k] = blank[k];
-  for (const k of Object.keys(blank.settings)) if (state.settings[k] === undefined) state.settings[k] = blank.settings[k];
+ const data=normalizeState(JSON.parse(text));
+ const previous=state;state=data;
+ try{save();}catch(e){state=previous;throw e;}
 }
 export function wipeAll() {
   state = blankState();
@@ -294,7 +339,7 @@ export function loadDemoData() {
     txs.push({ id: 'demo_p' + m + 'c', type: 'expense', amount: base * 0.2, categoryId: 'home', note: 'Дом', date: d.toISOString(), source: 'manual', accountId: 'main' });
     txs.push({ id: 'demo_p' + m + 'd', type: 'expense', amount: base * 0.15, categoryId: 'transport', note: 'Транспорт', date: d.toISOString(), source: 'manual', accountId: 'main' });
     txs.push({ id: 'demo_p' + m + 'e', type: 'expense', amount: base * 0.15, categoryId: 'fun', note: 'Развлечения', date: d.toISOString(), source: 'manual', accountId: 'main' });
-    txs.push({ id: 'demo_p' + m + 'f', type: 'expense', amount: base * 0.1, categoryId: 'other_exp', note: 'Прочее', date: d.toISOString(), source: 'manual', accountId: 'main' });
+    txs.push({ id: 'demo_p' + m + 'f', type: 'expense', amount: base * 0.1, categoryId: 'gifts', note: 'Цветы', date: d.toISOString(), source: 'manual', accountId: 'main' });
   }
   state.transactions = [...txs, ...state.transactions];
   save();
@@ -303,7 +348,7 @@ export function loadDemoData() {
 export function fmtMoney(n, withSign = false) {
   const cur = state.settings.currency || '₽';
   const abs = Math.abs(n);
-  const s = abs.toLocaleString('ru-RU', { maximumFractionDigits: abs % 1 ? 2 : 0 });
+  const s = abs.toLocaleString('ru-RU', { minimumFractionDigits: abs % 1 ? 2 : 0, maximumFractionDigits: 2 });
   const sign = withSign ? (n >= 0 ? '+' : '−') : (n < 0 ? '−' : '');
   return `${sign}${s} ${cur}`;
   }

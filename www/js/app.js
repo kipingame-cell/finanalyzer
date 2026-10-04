@@ -1,3 +1,4 @@
+import {bankDateKey,bankInput,fromBankInput} from './dates.js';
 // Главный модуль UI
 import { APP_VERSION, APP_NAME, KNOWN_BANK_PACKAGES } from './config.js';
 import * as S from './store.js';
@@ -14,6 +15,7 @@ let currentAccount = 'all'; // all | id счёта
 let selectedMonth = S.currentMonthKey();
 let opsSearch = '';
 let opsAllMonths = false;
+let opsAudit = 'all', opsCategory = '', opsPage=0, opsScope='';
 const selectedOps = new Set();
 let pendingSuggCount = 0;
 
@@ -28,27 +30,15 @@ function toast(msg, ms = 2200) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
-  $('#toast-root').appendChild(el);
+  $('#toast-root').replaceChildren(el);
   setTimeout(() => el.remove(), ms);
 }
 function fmtDate(iso) {
-  const d = new Date(iso);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
-  const diff = Math.round((today - dd) / 86400000);
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  if (diff === 0) return 'Сегодня, ' + time;
-  if (diff === 1) return 'Вчера, ' + time;
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ', ' + time;
+ const d=new Date(iso);if(!Number.isFinite(d.getTime()))return 'Проверьте дату';
+ return d.toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 function dayLabel(iso) {
-  const d = new Date(iso);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
-  const diff = Math.round((today - dd) / 86400000);
-  if (diff === 0) return 'Сегодня';
-  if (diff === 1) return 'Вчера';
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year:'numeric', weekday: 'short' });
+ const d=new Date(iso);return Number.isFinite(d.getTime())?d.toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long',year:'numeric'}):'Проверьте дату';
 }
 
 // ---------- Модалки ----------
@@ -85,7 +75,7 @@ function monthPickerHTML() {
   return `<div class="flex" style="margin-bottom:12px"><button class="btn btn-sm" id="prev-m" aria-label="Предыдущий месяц">←</button><input id="selected-month" type="month" value="${selectedMonth}" style="min-width:0;flex:1"><button class="btn btn-sm" id="next-m" aria-label="Следующий месяц">→</button><button class="btn btn-sm" id="now-m">Сегодня</button></div>`;
 }
 function bindMonthPicker() {
-  const move = delta => { const [y,m] = selectedMonth.split('-').map(Number); selectedMonth = S.monthKey(new Date(y,m-1+delta,1)); selectedOps.clear(); opsAllMonths=false; renderCurrent(false); };
+  const move = delta => { const [y,m] = selectedMonth.split('-').map(Number); selectedMonth = S.monthKey(new Date(Date.UTC(y,m-1+delta,1,12))); selectedOps.clear(); opsAllMonths=false; renderCurrent(false); };
   $('#prev-m').onclick = () => move(-1);
   $('#next-m').onclick = () => move(1);
   $('#now-m').onclick = () => { selectedMonth=S.currentMonthKey(); selectedOps.clear(); opsAllMonths=false; renderCurrent(false); };
@@ -96,11 +86,23 @@ function transferCardHTML(mk, acc) {
   return `<div class="card"><div class="card-title">↔ Переводы себе · ${t.count}</div><div>Пришло: ${S.fmtMoney(t.income)} · Ушло: ${S.fmtMoney(t.expense)}</div><p class="muted">Не входят в доходы, расходы и бюджеты. Движение по счетам сохраняется.</p><button class="btn btn-sm" id="show-transfers">Открыть переводы</button></div>`;
 }
 function bindTransferCard() {
-  $('#show-transfers').onclick=()=>{ currentTab='ops'; opsFilter='transfer'; opsSearch=''; opsAllMonths=false; selectedOps.clear(); renderCurrent(); };
+  $('#show-transfers').onclick=()=>{ currentTab='ops'; opsFilter='transfer'; opsAudit='all'; opsCategory=''; opsSearch=''; opsAllMonths=false; selectedOps.clear(); renderCurrent(); };
 }
 
 function openMonthOperations() {
-  currentTab='ops'; opsAllMonths=false; opsFilter='all'; opsSearch=''; selectedOps.clear(); renderCurrent();
+  currentTab='ops'; opsAllMonths=false; opsFilter='all'; opsSearch=''; opsAudit='all'; opsCategory=''; selectedOps.clear(); renderCurrent();
+}
+
+function qualityCardHTML(mk,acc) {
+ const rows=S.txInMonth(mk,acc),dupes=S.duplicateCandidates();
+ const invalid=S.getState().transactions.filter(t=>!t.excluded&&!S.isCounted(t)).length;
+ const unassigned=rows.filter(t=>S.isCounted(t)&&!S.isOwnTransfer(t)&&String(t.categoryId).startsWith('uncategorized')).length;
+ const repeats=rows.filter(t=>dupes.has(t.id)).length;
+ if(!unassigned&&!repeats&&!invalid)return '';
+ return `<div class="card"><div class="card-title">Проверка данных</div>${invalid?`<p>${invalid} записей с некорректной суммой, датой или типом не включены в расчёты.</p><button class="btn btn-sm" data-quality="invalid">Исправить записи</button>`:''}${unassigned?`<p>${unassigned} операций требуют категории. Их суммы уже учтены в итогах.</p><button class="btn btn-sm" data-quality="unassigned">Разобрать категории</button>`:''}${repeats?`<p>${repeats} записей могут повторяться. Сверьте их перед исключением.</p><button class="btn btn-sm" data-quality="duplicates">Проверить повторы</button>`:''}</div>`;
+}
+function bindQualityCard() {
+ document.querySelectorAll('[data-quality]').forEach(b=>b.onclick=()=>{currentTab='ops';opsAudit=b.dataset.quality;opsFilter='all';opsCategory='';opsSearch='';opsAllMonths=opsAudit==='invalid';selectedOps.clear();renderCurrent();});
 }
 
 function renderHome() {
@@ -109,7 +111,7 @@ function renderHome() {
   const { income, expense } = S.monthTotals(mk, acc);
   const bal = income - expense;
   const cats = S.byCategory(mk, 'expense', acc);
-  const recent = S.txInMonth(mk,acc).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)).slice(0,5);
+  const recent = S.txInMonth(mk,acc).filter(S.isCounted).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)).slice(0,5);
   const monthName = new Date(mk+'-01T12:00:00').toLocaleString('ru-RU', { month: 'long', year:'numeric' });
   const selAcc = acc ? S.getAccount(acc) : null;
   const balLabel = selAcc ? selAcc.name : 'Все счета';
@@ -127,7 +129,7 @@ function renderHome() {
       <div class="row">
         <div class="mini">Доходы<b style="color:#bbf7d0">${S.fmtMoney(income, true)}</b></div>
         <div class="mini">Расходы<b>${S.fmtMoney(-expense, true)}</b></div>
-        <div class="mini">Операций<b>${S.txInMonth(mk,acc).length}</b></div>
+        <div class="mini">Операций<b>${S.txInMonth(mk,acc).filter(S.isCounted).length}</b></div>
       </div>
     </div>
     <div class="card">
@@ -141,7 +143,8 @@ function renderHome() {
             <span class="legend-share">${Math.round(c.sum / expense * 100)}%</span></div>`).join('')}
         </div>` : '<div class="empty"><span class="big">🌱</span>Пока нет трат в этом месяце</div>'}
     </div>
-    ${budgetCardHTML(cats)}
+    ${qualityCardHTML(mk,acc)}
+    <details class="card"><summary>Бюджеты за выбранный месяц</summary>${budgetCardHTML(cats)}</details>
     ${transferCardHTML(mk,acc)}
     <div class="card">
       <div class="card-title">Операции · ${monthName}</div>
@@ -155,6 +158,7 @@ function renderHome() {
   $('#show-month-ops').onclick=openMonthOperations;
   bindMonthPicker();
   bindTransferCard();
+  bindQualityCard();
   $('#btn-notif').onclick = openNotifications;
   bindAccountStrip();
   bindTxRows();
@@ -167,7 +171,7 @@ function budgetCardHTML(cats) {
   return `<div class="card"><div class="card-title">Бюджеты на месяц</div>` + withBudget.map(c => {
     const s = spent[c.id] || 0;
     const pct = Math.min(100, Math.round(s / c.budget * 100));
-    const color = pct >= 100 ? 'var(--bad)' : pct >= 80 ? 'var(--warn)' : 'var(--good)';
+    const color = s >= c.budget ? 'var(--bad)' : s >= c.budget*0.8 ? 'var(--warn)' : 'var(--good)';
     return `<div class="budget-row">
       <div class="budget-top"><span>${c.icon} ${esc(c.name)}</span><span class="muted">${S.fmtMoney(s)} / ${S.fmtMoney(c.budget)}</span></div>
       <div class="budget-bar"><div class="budget-fill" style="width:${pct}%;background:${color}"></div></div>
@@ -178,11 +182,11 @@ function budgetCardHTML(cats) {
 function txRowHTML(t) {
   const c = S.isOwnTransfer(t) ? {name:'Переводы себе',icon:'↔',color:'#60a5fa'} : S.getCategory(t.categoryId);
   const a = S.getAccount(t.accountId || 'main');
-  return `<div class="tx-row" data-id="${t.id}">
+  return `<div class="tx-row ${t.excluded?'excluded':''}" data-id="${t.id}">
     <div class="tx-ico" style="background:${c.color}22">${c.icon}</div>
     <div class="tx-info">
       <div class="tx-name">${esc(t.note || c.name)}</div>
-      <div class="tx-meta">${esc(c.name)} · ${esc(a.name)} · ${fmtDate(t.date)}${t.source === 'notification' ? ' · 🔔' : ''}</div>
+      <div class="tx-meta">${esc(c.name)} · ${esc(a.name)} · ${fmtDate(t.date)} · ${{statement:'Выписка',notification:'Уведомление',sms:'SMS',manual:'Вручную'}[t.source]||'Вручную'}${t.excluded?' · Исключено из расчётов':''}</div>
     </div>
     <div class="tx-sum ${t.type}">${t.type === 'income' ? '+' : '−'}${S.fmtMoney(t.amount)}</div>
   </div>`;
@@ -201,47 +205,46 @@ function bindTxRows() {
 // ОПЕРАЦИИ
 // ============================================================
 function renderOps() {
-  const acc = accFilter();
-  const txs = (opsAllMonths ? S.getState().transactions.filter(t=>!acc||(t.accountId||'main')===acc) : S.txInMonth(selectedMonth,acc))
-    .filter(t => opsFilter === 'all' || (opsFilter === 'transfer' ? S.isOwnTransfer(t) : t.type === opsFilter && !S.isOwnTransfer(t)))
-    .filter(t => !opsSearch || (t.note || '').toLocaleLowerCase('ru').includes(opsSearch.toLocaleLowerCase('ru')))
-    .sort((a,b)=>Date.parse(b.date)-Date.parse(a.date));
-  const groups = {};
-  for (const t of txs) {
-    const k = dayLabel(t.date);
-    (groups[k] = groups[k] || []).push(t);
-  }
-  view().innerHTML = `
-    <div class="page-head"><h1>Операции</h1><span class="muted">${txs.length} шт.</span></div>
-    ${accountStripHTML()}
-    ${monthPickerHTML()}
-    <label style="display:block;margin:12px 0"><input id="ops-all-months" type="checkbox" ${opsAllMonths?'checked':''}> За всю историю</label>
-    <div class="field"><label>Поиск по описанию (например, своё имя или номер)</label><input id="ops-search" value="${esc(opsSearch)}" type="search"><button class="btn btn-sm" id="ops-find">Найти</button></div>
-    <div class="seg">
-      <button data-f="all" class="${opsFilter === 'all' ? 'active' : ''}">Все</button>
-      <button data-f="income" class="${opsFilter === 'income' ? 'active' : ''}">Доходы</button>
-      <button data-f="transfer" class="${opsFilter === 'transfer' ? 'active' : ''}">Себе</button>
-      <button data-f="expense" class="${opsFilter === 'expense' ? 'active' : ''}">Расходы</button>
-    </div>
-    <div class="card"><div class="flex" style="flex-wrap:wrap"><button class="btn btn-sm" id="select-visible">Выбрать найденные</button><button class="btn btn-sm" id="clear-selection">Снять выбор</button><button class="btn btn-sm" id="mark-own">Это переводы себе</button><button class="btn btn-sm" id="mark-normal">Обычные операции</button></div><div class="muted" id="selection-count">Выбрано: ${selectedOps.size}</div></div>
-    ${txs.length ? Object.entries(groups).map(([day, arr]) => `
-      <div class="day-head">${day}</div>
-      <div class="card" style="padding:4px 16px">${arr.map(t=>`<label class="muted"><input type="checkbox" data-select="${esc(t.id)}" ${selectedOps.has(t.id)?'checked':''}> Выбрать</label>${txRowHTML(t)}`).join('')}</div>`).join('')
-    : '<div class="empty"><span class="big">📭</span>Операций нет</div>'}`;
-  bindMonthPicker();
-  $('#ops-all-months').onchange=e=>{opsAllMonths=e.target.checked;selectedOps.clear();renderOps();};
-  const search=()=>{opsSearch=$('#ops-search').value.trim();selectedOps.clear();renderOps();};
-  $('#ops-find').onclick=search;
-  $('#ops-search').onkeydown=e=>{if(e.key==='Enter')search();};
-  const count=()=>{$('#selection-count').textContent='Выбрано: '+selectedOps.size;};
-  view().querySelectorAll('[data-select]').forEach(el=>el.onchange=()=>{if(el.checked)selectedOps.add(el.dataset.select);else selectedOps.delete(el.dataset.select);count();});
-  $('#select-visible').onclick=()=>{txs.forEach(t=>selectedOps.add(t.id));renderOps();};
-  $('#clear-selection').onclick=()=>{selectedOps.clear();renderOps();};
-  const mark=value=>{if(!selectedOps.size){toast('Сначала выберите операции');return;}try{const n=S.setOwnTransfers([...selectedOps],value);selectedOps.clear();renderOps();toast('Обновлено операций: '+n);}catch{toast('Не удалось сохранить');}};
-  $('#mark-own').onclick=()=>mark(true);$('#mark-normal').onclick=()=>mark(false);
-  view().querySelectorAll('.seg button').forEach(b => b.onclick = () => { opsFilter = b.dataset.f; selectedOps.clear(); renderOps(); });
-  bindAccountStrip();
-  bindTxRows();
+ const acc=accFilter(),scope=JSON.stringify([acc,selectedMonth,opsAllMonths,opsFilter,opsSearch,opsAudit,opsCategory]);
+ if(scope!==opsScope){opsScope=scope;opsPage=0;selectedOps.clear();}
+ const duplicates=opsAudit==='duplicates'?S.duplicateCandidates():null;
+ const txs=(opsAllMonths?S.getState().transactions.filter(t=>!acc||(t.accountId||'main')===acc):S.txInMonth(selectedMonth,acc))
+  .filter(t=>opsAudit==='excluded'?t.excluded:!t.excluded)
+  .filter(t=>opsAudit==='invalid'?!S.isCounted(t):opsAudit==='unassigned'?String(t.categoryId).startsWith('uncategorized')&&!S.isOwnTransfer(t):opsAudit==='duplicates'?duplicates.has(t.id):true)
+  .filter(t=>opsFilter==='all'||(opsFilter==='transfer'?S.isOwnTransfer(t):t.type===opsFilter&&!S.isOwnTransfer(t)))
+  .filter(t=>!opsCategory||t.categoryId===opsCategory)
+  .filter(t=>!opsSearch||(t.note||'').toLocaleLowerCase('ru').includes(opsSearch.toLocaleLowerCase('ru')))
+  .sort((a,b)=>Date.parse(b.date)-Date.parse(a.date));
+ const pages=Math.max(1,Math.ceil(txs.length/50));opsPage=Math.min(opsPage,pages-1);
+ const pageRows=txs.slice(opsPage*50,(opsPage+1)*50),groups=new Map();
+ for(const t of pageRows){const k=dayLabel(t.date);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(t);}
+ view().innerHTML=`<div class="page-head"><h1>Операции</h1><span class="muted">${txs.length} шт.</span></div>
+ ${accountStripHTML()}${monthPickerHTML()}
+ <label class="check-line"><input id="ops-all-months" type="checkbox" ${opsAllMonths?'checked':''}> За всю историю</label>
+ <div class="field"><label>Поиск по магазину, имени или номеру</label><div class="flex"><input id="ops-search" type="search" value="${esc(opsSearch)}"><button class="btn btn-sm" id="ops-find">Найти</button></div></div>
+ <div class="seg">${[['all','Все'],['income','Доходы'],['expense','Расходы'],['transfer','Себе']].map(([id,name])=>`<button data-f="${id}" class="${opsFilter===id?'active':''}">${name}</button>`).join('')}</div>
+ <div class="field"><select id="ops-category" aria-label="Категория"><option value="">Все категории</option>${S.getCategories().map(c=>`<option value="${esc(c.id)}" ${opsCategory===c.id?'selected':''}>${esc(c.name)} · ${c.type==='income'?'доход':'расход'}</option>`).join('')}</select></div>
+ <div class="field"><select id="ops-audit" aria-label="Проверка записей">${[['all','Все учтённые записи'],['unassigned','Нужно выбрать категорию'],['duplicates','Возможные повторы'],['invalid','Ошибки в суммах или датах'],['excluded','Исключённые из расчётов']].map(([id,name])=>`<option value="${id}" ${opsAudit===id?'selected':''}>${name}</option>`).join('')}</select></div>
+ ${opsAudit==='duplicates'?'<p class="muted">Одинаковая сумма не доказывает повтор. Сравните дату, счёт, источник и описание. Исключите только лишнюю копию, оставив одну запись.</p>':''}
+ <details class="card" ${selectedOps.size?'open':''}><summary>Действия с выбранными · <span id="selection-count">${selectedOps.size}</span></summary>
+ <div class="flex mt8 wrap"><button class="btn btn-sm" id="select-visible">Выбрать найденные (${txs.length})</button><button class="btn btn-sm" id="clear-selection">Снять выбор</button><button class="btn btn-sm" id="mark-own">Это переводы себе</button><button class="btn btn-sm" id="mark-normal">Обычные операции</button></div>
+ <div class="field mt8"><label>Назначить категорию выбранным</label><select id="batch-category"><option value="">Выберите категорию</option>${S.getCategories().filter(c=>!c.id.startsWith('uncategorized')).map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${c.type==='income'?'доход':'расход'}</option>`).join('')}</select></div>
+ <div class="flex wrap"><button class="btn btn-sm" id="batch-apply">Применить категорию</button><button class="btn btn-sm" id="exclude-selected">Исключить из расчётов</button><button class="btn btn-sm" id="restore-selected">Вернуть в расчёты</button></div></details>
+ ${txs.length?[...groups].map(([day,arr])=>`<div class="day-head">${day}</div><div class="card tx-list">${arr.map(t=>`<div class="selectable-tx"><input aria-label="Выбрать операцию" type="checkbox" data-select="${esc(t.id)}" ${selectedOps.has(t.id)?'checked':''}>${txRowHTML(t)}</div>`).join('')}</div>`).join(''):'<div class="empty">Нет операций по выбранным условиям</div>'}
+ <div class="flex pager"><button class="btn btn-sm" id="ops-prev" ${opsPage===0?'disabled':''}>Назад</button><span>${opsPage+1} / ${pages}</span><button class="btn btn-sm" id="ops-next" ${opsPage+1>=pages?'disabled':''}>Далее</button></div>`;
+ bindMonthPicker();bindAccountStrip();bindTxRows();
+ $('#ops-all-months').onchange=e=>{opsAllMonths=e.target.checked;renderOps();};
+ $('#ops-category').onchange=e=>{opsCategory=e.target.value;renderOps();};
+ $('#ops-audit').onchange=e=>{opsAudit=e.target.value;renderOps();};
+ const search=()=>{opsSearch=$('#ops-search').value.trim();renderOps();};$('#ops-find').onclick=search;$('#ops-search').onkeydown=e=>{if(e.key==='Enter')search();};
+ view().querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{opsFilter=b.dataset.f;renderOps();});
+ view().querySelectorAll('[data-select]').forEach(el=>el.onchange=()=>{if(el.checked)selectedOps.add(el.dataset.select);else selectedOps.delete(el.dataset.select);$('#selection-count').textContent=selectedOps.size;});
+ $('#select-visible').onclick=()=>{txs.forEach(t=>selectedOps.add(t.id));renderOps();};$('#clear-selection').onclick=()=>{selectedOps.clear();renderOps();};
+ const apply=fn=>{if(!selectedOps.size){toast('Сначала выберите операции');return;}try{const n=fn([...selectedOps]);selectedOps.clear();renderOps();toast('Обновлено: '+n);}catch(e){toast(e.message||'Не удалось сохранить');}};
+ $('#mark-own').onclick=()=>apply(ids=>S.setOwnTransfers(ids,true));$('#mark-normal').onclick=()=>apply(ids=>S.setOwnTransfers(ids,false));
+ $('#batch-apply').onclick=()=>apply(ids=>S.classifyTransactions(ids,$('#batch-category').value));
+ $('#exclude-selected').onclick=()=>apply(ids=>S.setExcluded(ids,true));$('#restore-selected').onclick=()=>apply(ids=>S.setExcluded(ids,false));
+ $('#ops-prev').onclick=()=>{opsPage--;renderOps();window.scrollTo(0,0);};$('#ops-next').onclick=()=>{opsPage++;renderOps();window.scrollTo(0,0);};
 }
 
 // ============================================================
@@ -263,7 +266,7 @@ function renderStats() {
     </div>
     ${accountStripHTML()}
     ${monthPickerHTML()}
-    ${transferCardHTML(mk,acc)}
+    ${qualityCardHTML(mk,acc)}
     <div class="card">
       <div class="card-title">${mName[0].toUpperCase() + mName.slice(1)}</div>
       <div class="flex" style="justify-content:space-around;text-align:center">
@@ -289,6 +292,7 @@ function renderStats() {
         <span class="legend-share">${Math.round(c.sum / expense * 100)}%</span></div>`).join('')}</div>`
       : '<div class="empty"><span class="big">🌱</span>Нет расходов в этом месяце</div>'}
     </div>
+    ${transferCardHTML(mk,acc)}
     ${merch.length ? `<div class="card"><div class="card-title">Где чаще всего тратите</div>
       ${merch.map((m, i) => `<div class="legend-row"><b>${i + 1}.</b><span class="legend-name">${esc(m.note)}</span><span class="legend-val">${S.fmtMoney(m.sum)}</span></div>`).join('')}
     </div>` : ''}`;
@@ -297,6 +301,7 @@ function renderStats() {
   if (cats.length) drawDonut($('#donut2'), cats.map(c => ({ label: c.category.name, value: c.sum, color: c.category.color })), S.fmtMoney(expense));
   bindMonthPicker();
   bindTransferCard();
+  bindQualityCard();
   bindAccountStrip();
 }
 
@@ -304,9 +309,9 @@ function renderStats() {
 // ИИ-СОВЕТНИК
 // ============================================================
 function renderAI() {
-  const tips = offlineInsights();
+  const tips = offlineInsights(selectedMonth,accFilter());
   view().innerHTML = `
-    <div class="page-head"><h1>Советник</h1><span class="muted">${hasToken() ? '🟢 ИИ подключён' : '🟡 офлайн-режим'}</span></div>
+    <div class="page-head"><h1>Советник · ${selectedMonth}</h1><span class="muted">${hasToken() ? '🟢 ИИ подключён' : '🟡 офлайн-режим'}</span></div>
     ${tips.map(t => `<div class="tip ${t.level}"><div class="t-head">${{ good: '✅', warn: '⚠️', bad: '🚨', info: '💡' }[t.level]} ${esc(t.title)}</div><div class="t-body">${esc(t.text)}</div></div>`).join('')}
     <div class="card">
       <div class="card-title">Облачный ИИ-разбор ${hasToken() ? '' : '(необязательно)'}</div>
@@ -327,7 +332,7 @@ function renderAI() {
     const ans = $('#ai-answer');
     ans.innerHTML = '<div class="flex" style="justify-content:center;padding:20px"><div class="spinner"></div></div>';
     try {
-      const text = await askAI(q);
+      const text = await askAI(q,selectedMonth,accFilter());
       ans.innerHTML = `<div class="ai-msg">${esc(text)}</div>`;
     } catch (e) {
       ans.innerHTML = `<div class="tip bad"><div class="t-head">🚨 Ошибка запроса</div><div class="t-body">${esc(e.message)}</div></div>`;
@@ -530,7 +535,9 @@ async function refreshBadge() {
   try {
     if (!(await isListenerEnabled())) return;
     const r = await fetchSuggestions();
-    if (S.getSettings().notifAutoImport && importSuggestions(r.suggestions)) renderCurrent(false);
+    if (S.getSettings().notifAutoImport && importSuggestions(r.suggestions)) {
+      if(!$('#modal-root').firstElementChild && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))renderCurrent(false);
+    }
     const st = S.getState();
     const pending = r.suggestions.filter(p => !st.seenNotifHashes.includes(p.hash));
     pendingSuggCount = pending.length;
@@ -562,7 +569,8 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
     <div class="field"><label>Счёт / карта</label><div class="chip-row" id="acc-row">${S.getAccounts().map(a => `<span class="chip ${a.id === accountId ? 'active' : ''}" data-a="${a.id}">${esc(a.name)}</span>`).join('')}</div></div>
     <label style="display:block;margin:12px 0"><input id="f-own" type="checkbox" ${S.isOwnTransfer(src)?'checked':''}> ↔ Перевод между своими счетами</label><p class="muted">Исключить из доходов и расходов, сохранив направление движения денег.</p>
     <div class="field"><label>Комментарий</label><input id="f-note" value="${esc(src.note || '')}" placeholder="Напр.: Пятёрочка"></div>
-    <div class="field"><label>Дата</label><input id="f-date" type="datetime-local" value="${toLocalInput(src.date)}"></div>
+    <label class="check-line"><input id="f-excluded" type="checkbox" ${src.excluded?'checked':''}> Исключить эту запись из расчётов</label>
+    <div class="field"><label>Дата и время (Москва)</label><input id="f-date" type="datetime-local" value="${toLocalInput(src.date || (src.ts ? new Date(src.ts).toISOString() : null))}"></div>
     <div class="flex">
       ${existing ? '<button class="btn btn-danger" id="tx-del">🗑</button>' : ''}
       <button class="btn btn-primary btn-block grow" id="tx-save">Сохранить</button>
@@ -576,7 +584,7 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
   function renderCatGrid() {
     const grid = $('#cat-grid', m);
     const cats = S.getCategories(type);
-    if (!categoryId || !cats.some(c => c.id === categoryId)) categoryId = cats[0] ? cats[0].id : null;
+    if (!categoryId || !cats.some(c => c.id === categoryId)) categoryId = type==='income'?'uncategorized_inc':'uncategorized_exp';
     grid.innerHTML = cats.map(c => `<div class="cat-cell ${c.id === categoryId ? 'active' : ''}" data-id="${c.id}">
       <span class="ci">${c.icon}</span><span>${esc(c.name)}</span></div>`).join('');
     grid.querySelectorAll('.cat-cell').forEach(el => el.onclick = () => { categoryId = el.dataset.id; renderCatGrid(); });
@@ -590,18 +598,21 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
   });
 
   $('#tx-save', m).onclick = () => {
-    const amount = parseFloat(String($('#f-amount', m).value).replace(',', '.'));
+    const amountText=$('#f-amount',m).value.replace(/[ \u00a0\u202f]/g,'').replace(',','.');
+    const amount=/^\d+(?:\.\d{1,2})?$/.test(amountText)?Number(amountText):NaN;
     if (!Number.isFinite(amount) || amount <= 0) { toast('Введите сумму'); return; }
-    const date = new Date($('#f-date',m).value || Date.now());
-    if (!Number.isFinite(date.getTime())) { toast('Проверьте дату'); return; }
+    const date = fromBankInput($('#f-date',m).value);
+    if (!date) { toast('Проверьте дату'); return; }
     const patch = {
-      type, amount, categoryId, accountId, ownTransfer: $('#f-own',m).checked,
+      type, amount, categoryId, accountId, ownTransfer: $('#f-own',m).checked, excluded:$('#f-excluded',m).checked, categoryManual: !categoryId.startsWith('uncategorized'),
       note: $('#f-note', m).value.trim(),
-      date: date.toISOString(),
+      date,
       source: src.source || 'manual',
     };
+    try {
     if (existing) { S.updateTransaction(existing.id, patch); toast('Сохранено'); }
-    else { if (src.hash) patch.hash = src.hash; S.addTransaction(patch); toast('Добавлено'); }
+    else { if (src.hash) patch.hash = src.hash; if(src.smsId)patch.smsId=src.smsId; if(src.contentHash)patch.contentHash=src.contentHash; S.addTransaction(patch); toast('Добавлено'); }
+    }catch(e){toast(e.message||'Не удалось сохранить');return;}
     closeModal();
     if (onSaved) onSaved(); else renderCurrent(false);
   };
@@ -611,11 +622,7 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
   };
 }
 
-function toLocalInput(iso) {
-  const d = iso ? new Date(iso) : new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-}
+function toLocalInput(iso) { return bankInput(iso||new Date().toISOString()); }
 
 // ============================================================
 // ЕЩЁ (настройки, категории, бэкап, обновление)
@@ -637,7 +644,7 @@ function renderMore() {
     <div class="card row-list">
       <div class="menu-row" id="m-wipe"><span class="mr-ico">🗑️</span><div class="mr-text" style="color:#fda4af">Сбросить все данные</div></div>
     </div>
-    <p class="muted" style="font-size:12px;text-align:center">${APP_NAME} v${APP_VERSION}<br>Все данные хранятся только на вашем устройстве.</p>`;
+    <p class="muted" style="font-size:12px;text-align:center">${APP_NAME} ${APP_VERSION}<br>Все данные хранятся только на вашем устройстве.</p>`;
   $('#m-statement').onclick = () => openStatementImport({openModal,closeModal,esc,renderCurrent,toast});
   $('#m-notif').onclick = openNotifications;
   $('#m-accs').onclick = openAccounts;
@@ -709,7 +716,7 @@ function openAccounts() {
 // ---------- Категории и бюджеты ----------
 function openCategories() {
   const renderList = (m) => {
-    const html = S.getCategories().map(c => `
+    const html = S.getCategories().filter(c=>!c.id.startsWith('uncategorized')).map(c => `
       <div class="legend-row" data-id="${c.id}">
         <span class="legend-dot" style="background:${c.color}"></span>
         <span class="legend-name">${c.icon} ${esc(c.name)} <span class="muted" style="font-size:11px">${c.type === 'income' ? 'доход' : 'расход'}</span></span>
@@ -762,12 +769,12 @@ function editCategory(id, parentModal, rerender) {
     const name = $('#c-name', m).value.trim();
     if (!name) { toast('Введите название'); return; }
     const budget = Math.max(0, parseInt($('#c-budget', m).value) || 0);
-    if (id) S.updateCategory(id, { name, icon, color, type, budget });
-    else S.addCategory({ name, icon, color, type, budget });
+    try{if (id) S.updateCategory(id, { name, icon, color, type, budget });
+    else S.addCategory({ name, icon, color, type, budget });}catch(e){toast(e.message);return;}
     closeModal(); openCategories(); // перерисуем список
   };
   const del = $('#c-del', m);
-  if (del) del.onclick = () => { if (confirm('Удалить категорию? Операции перейдут в «Прочее».')) { S.deleteCategory(id); closeModal(); openCategories(); } };
+  if (del) del.onclick = () => { if (confirm('Удалить категорию? У её операций потребуется выбрать новую категорию.')) { S.deleteCategory(id); closeModal(); openCategories(); } };
 }
 
 // ---------- Бэкап ----------
@@ -838,6 +845,7 @@ function showUpdateDialog(r) {
 // РОУТЕР / ИНИЦИАЛИЗАЦИЯ
 // ============================================================
 function renderCurrent(resetAnim = true) {
+  if(resetAnim)window.scrollTo(0,0);
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === currentTab));
   $('#fab').style.display = (currentTab === 'home' || currentTab === 'ops') ? '' : 'none';
   if (currentTab === 'home') renderHome();
@@ -855,7 +863,11 @@ async function autoUpdateCheck() {
 }
 
 function boot() {
-  S.initStore();
+  try{S.initStore();}catch(e){
+    view().innerHTML=`<div class="card"><h1>Проверка данных</h1><p>${esc(e.message)}</p><p>Исходная запись сохранена. Скопируйте её перед восстановлением.</p><div class="field"><textarea id="recovery-data" rows="8">${esc(localStorage.getItem('finanalyzer_data_v1')||'')}</textarea></div><button class="btn" id="recover">Восстановить из JSON в поле</button></div>`;
+    $('#recover').onclick=()=>{try{S.importJSON($('#recovery-data').value);boot();}catch(error){toast(error.message);}};
+    return;
+  }
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => { if(t.dataset.tab==='ops' && currentTab!=='ops'){openMonthOperations();return;} currentTab=t.dataset.tab; renderCurrent(); });
   $('#fab').onclick = () => openTxModal();
   renderCurrent();

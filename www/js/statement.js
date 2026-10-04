@@ -1,3 +1,4 @@
+import {bankDateKey} from './dates.js';
 // Explicit, reviewable imports. An unsigned, unclassified amount is never a debit by default.
 import {guessCategory, parseNotification} from './parser.js';
 import {getState, save} from './store.js';
@@ -182,13 +183,15 @@ export function parseStatementText(text) {
 }
 export function prepareStatement(result,accountId,state=getState()) {
   const counts=new Map();
+  const keys=new Set(state.transactions.map(t=>t.statementKey).filter(Boolean));
+  const amounts=new Set(state.transactions.filter(t=>!t.excluded).map(t=>[t.type,Math.round(Number(t.amount)*100),bankDateKey(t.date)].join('|')));
   return result.operations.map(op=>{
     // Full canonical key avoids hash collisions; occurrence preserves identical rows.
     const base=JSON.stringify(op.externalId ? [accountId,'id',op.externalId] : [accountId,op.date,op.type,op.amount,op.note.toLowerCase()]);
     const occurrence=op.externalId?1:(counts.get(base)||0)+1;counts.set(base,occurrence);
     const statementKey=base+'#'+occurrence;
-    const duplicate=state.transactions.some(t=>t.statementKey===statementKey);
-    const possibleDuplicate=!duplicate && state.transactions.some(t=>t.accountId===accountId&&t.type===op.type&&t.amount===op.amount&&String(t.date).slice(0,10)===op.date.slice(0,10));
+    const duplicate=keys.has(statementKey);
+    const possibleDuplicate=!duplicate && amounts.has([op.type,Math.round(op.amount*100),bankDateKey(op.date)].join('|'));
     return {...op,statementKey,accountId,duplicate,possibleDuplicate};
   });
 }
@@ -196,14 +199,17 @@ export function importStatement(rows,accountId) {
   const st=getState(),snapshot=JSON.parse(JSON.stringify(st));
   if(!st.accounts.some(a=>a.id===accountId))throw new Error('Выберите существующий счёт');
   let count=0;
+  const keys=new Set(st.transactions.map(t=>t.statementKey).filter(Boolean)),added=[];
   try {
     for(const row of rows) {
       if(row.accountId!==accountId || !operation(row.date,row.amount,row.type,row.note,row.raw))throw new Error('Неверная операция');
-      if(st.transactions.some(t=>t.statementKey===row.statementKey))continue;
-      st.transactions.unshift({id:'st_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
+      if(!row.statementKey)throw new Error('Не найден ключ операции');
+      if(keys.has(row.statementKey))continue;
+      keys.add(row.statementKey);
+      added.push({id:'st_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
         date:row.date,type:row.type,amount:row.amount,note:row.note,categoryId:row.categoryId,accountId,
         source:'statement',statementKey:row.statementKey,postingDate:row.postingDate});count++;
     }
-    if(count)save();return count;
+    if(count){st.transactions=[...added.reverse(),...st.transactions];save();}return count;
   }catch(error){Object.assign(st,snapshot);throw error;}
 }

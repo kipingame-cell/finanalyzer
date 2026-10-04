@@ -1,18 +1,19 @@
+import {bankDateKey} from './dates.js';
 // ИИ-советник: работает офлайн (эвристики) и с любым OpenAI-совместимым токеном.
-import { isOwnTransfer, getState, getSettings, monthTotals, byCategory, lastNMonths, avgMonthlyExpense, currentMonthKey, balance, fmtMoney, topMerchants, txInMonth } from './store.js';
+import { isCounted, isOwnTransfer, getState, getSettings, monthTotals, byCategory, lastNMonths, avgMonthlyExpense, currentMonthKey, balance, fmtMoney, topMerchants, txInMonth } from './store.js';
 
 // ---------- Офлайн-анализ (работает без всякого токена) ----------
-export function offlineInsights() {
+export function offlineInsights(mk=currentMonthKey(),accountId) {
   const tips = [];
-  const mk = currentMonthKey();
-  const { income, expense } = monthTotals(mk);
-  const cats = byCategory(mk, 'expense');
-  const avg = avgMonthlyExpense(3);
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const day = new Date().getDate();
+  const { income, expense } = monthTotals(mk,accountId);
+  const cats = byCategory(mk, 'expense',accountId);
+  const history=lastNMonths(4,accountId,mk).slice(0,-1);
+  const avg=history.reduce((n,m)=>n+m.expense,0)/3;
+  const [y,m,day]=bankDateKey(new Date()).split('-').map(Number);
+  const daysInMonth=new Date(Date.UTC(y,m,0)).getUTCDate();
 
-  if (!getState().transactions.length) {
-    return [{ level: 'info', title: 'Пока пусто', text: 'Добавьте первую операцию или включите чтение уведомлений — и я начну анализировать.' }];
+  if (!txInMonth(mk,accountId).some(isCounted)) {
+    return [{ level: 'info', title: 'Пока пусто', text: 'В выбранном месяце на выбранном счёте нет учтённых операций.' }];
   }
 
   // Норма сбережений
@@ -31,7 +32,7 @@ export function offlineInsights() {
   }
 
   // Перерасход по темпу месяца
-  if (avg > 0) {
+  if (avg > 0 && mk===currentMonthKey()) {
     const projected = expense / day * daysInMonth;
     if (projected > avg * 1.2) tips.push({ level: 'bad', title: 'Темп трат выше обычного', text: `При текущем темпе месяц закроется на ${fmtMoney(projected)}, а ваш средний — ${fmtMoney(avg)}. Притормозите необязательные покупки.` });
     else if (projected < avg * 0.85) tips.push({ level: 'good', title: 'Идёте экономнее обычного', text: `Прогноз на месяц — ${fmtMoney(projected)} против средних ${fmtMoney(avg)}.` });
@@ -45,18 +46,18 @@ export function offlineInsights() {
   }
 
   // Частые мелкие траты
-  const txs = txInMonth(mk).filter(t => t.type === 'expense' && !isOwnTransfer(t) && t.amount < 300);
+  const txs = txInMonth(mk,accountId).filter(t => t.type === 'expense' && isCounted(t) && !isOwnTransfer(t) && t.amount < 300);
   if (txs.length >= 15) {
     const sum = txs.reduce((s, t) => s + t.amount, 0);
     tips.push({ level: 'warn', title: `${txs.length} мелких покупок до 300 ${getSettings().currency}`, text: `Суммарно это уже ${fmtMoney(sum)}. Мелочи съедают бюджет незаметно.` });
   }
 
   // Подписки
-  const subs = byCategory(mk).find(c => c.category.id === 'subs');
+  const subs = byCategory(mk,'expense',accountId).find(c => c.category.id === 'subs');
   if (subs && subs.sum > 2000) tips.push({ level: 'warn', title: `Подписки: ${fmtMoney(subs.sum)}/мес`, text: `Это ${fmtMoney(subs.sum * 12)} в год. Проверьте, всеми ли пользуетесь.` });
 
   // Топ-магазин
-  const merch = topMerchants(mk, 1);
+  const merch = topMerchants(mk, 1,accountId);
   if (merch.length && merch[0].sum > 5000) tips.push({ level: 'info', title: `Чаще всего: «${merch[0].note}»`, text: `${fmtMoney(merch[0].sum)} за месяц. Иногда выгоднее закупаться раз в неделю списком.` });
 
   if (!tips.length) tips.push({ level: 'good', title: 'Всё ровно', text: 'Аномалий не вижу: траты в пределах нормы, бюджеты соблюдаются.' });
@@ -64,22 +65,21 @@ export function offlineInsights() {
 }
 
 // ---------- Облачный ИИ (опционально, OpenAI-совместимый API) ----------
-function buildFinanceSummary() {
-  const mk = currentMonthKey();
-  const { income, expense } = monthTotals(mk);
-  const cats = byCategory(mk, 'expense').slice(0, 8)
+function buildFinanceSummary(mk,accountId) {
+  const { income, expense } = monthTotals(mk,accountId);
+  const cats = byCategory(mk, 'expense',accountId).slice(0, 8)
     .map(c => `- ${c.category.name}: ${Math.round(c.sum)} ₽`).join('\n');
-  const months = lastNMonths(6).map(m => `${m.label}: доход ${Math.round(m.income)}, расход ${Math.round(m.expense)}`).join('\n');
-  return `Изменение средств по записанным операциям (не банковский остаток): ${Math.round(balance())} ₽\nТекущий месяц: доход ${Math.round(income)} ₽, расход ${Math.round(expense)} ₽\nТраты по категориям:\n${cats || 'нет данных'}\nПоследние месяцы:\n${months}`;
+  const months = lastNMonths(6,accountId,mk).map(m => `${m.label}: доход ${Math.round(m.income)}, расход ${Math.round(m.expense)}`).join('\n');
+  return `Изменение средств по записанным операциям (не банковский остаток): ${Math.round(balance(accountId))} ₽\nМесяц ${mk}: доход ${Math.round(income)} ₽, расход ${Math.round(expense)} ₽\nТраты по категориям:\n${cats || 'нет данных'}\nПоследние месяцы:\n${months}`;
 }
 
-export async function askAI(question) {
+export async function askAI(question,mk=currentMonthKey(),accountId) {
   const s = getSettings();
   if (!s.aiToken) throw new Error('no-token');
   const base = (s.aiBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = s.aiModel || 'gpt-4o-mini';
   const sys = 'Ты — личный финансовый советник. Отвечай по-русски, коротко и по делу, с конкретными цифрами из данных пользователя. Давай 3–5 практичных рекомендаций. Форматируй маркированными списками.';
-  const user = `Вот сводка моих финансов:\n${buildFinanceSummary()}\n\nВопрос: ${question || 'Проанализируй мои финансы и дай рекомендации на этот месяц.'}`;
+  const user = `Вот сводка моих финансов:\n${buildFinanceSummary(mk,accountId)}\n\nВопрос: ${question || 'Проанализируй мои финансы и дай рекомендации на этот месяц.'}`;
   const resp = await fetch(base + '/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.aiToken },

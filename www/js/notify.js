@@ -90,11 +90,16 @@ export async function injectTestNotification() {
 // One synchronous save contains transactions and dedup markers: retry after a
 // bridge failure cannot insert the same notification twice.
 export function importSuggestions(suggestions) {
+  if(!suggestions.length)return 0;
   const st = getState();
   const snapshot = JSON.parse(JSON.stringify(st));
+  const seen=new Set([...st.seenNotifHashes,...st.dismissedNotifHashes,...st.transactions.map(t=>t.hash)]);
   let count = 0;
+  try {
   for (const p of [...suggestions].sort((a, b) => a.ts - b.ts)) {
-    if (st.seenNotifHashes.includes(p.hash) || st.dismissedNotifHashes.includes(p.hash) || st.transactions.some(t => t.hash === p.hash)) continue;
+    if(seen.has(p.hash))continue;
+    if(!Number.isFinite(p.ts)||!Number.isFinite(p.amount)||p.amount<=0||!['income','expense'].includes(p.type))continue;
+    seen.add(p.hash);
     // Match only the same source text across SMS history and SMS notifications,
     // one-to-one, within delivery tolerance. Keep identical separate SMS ids.
     const duplicate = p.contentHash && st.transactions.find(t =>
@@ -127,6 +132,7 @@ export function importSuggestions(suggestions) {
     catch (error) { Object.assign(st, snapshot); throw error; }
   }
   return count;
+  }catch(error){Object.assign(st,snapshot);throw error;}
 }
 
 async function readNotificationQueue(nl) {

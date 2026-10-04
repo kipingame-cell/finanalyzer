@@ -10,9 +10,10 @@ function setupCanvas(canvas) {
   return { ctx, w: rect.width, h: rect.height };
 }
 
-function animate(draw, duration = 600) {
+function animate(draw, duration = 300, canvas) {
   const start = performance.now();
   function frame(now) {
+    if(canvas && !canvas.isConnected)return;
     const t = Math.min(1, (now - start) / duration);
     const e = 1 - Math.pow(1 - t, 3); // easeOutCubic
     draw(e);
@@ -59,7 +60,7 @@ export function drawDonut(canvas, data, centerText = '') {
       const lines = centerText.split('\n');
       lines.forEach((ln, i) => ctx.fillText(ln, cx, cy + (i - (lines.length - 1) / 2) * 18));
     }
-  });
+  }, 300, canvas);
 }
 
 // months: [{label, income, expense}]
@@ -87,7 +88,7 @@ export function drawBars(canvas, months) {
       ctx.textAlign = 'center';
       ctx.fillText(m.label, gx + groupW / 2, h - 8);
     });
-  });
+  }, 300, canvas);
 }
 
 function roundBar(ctx, x, y, w, h, color) {

@@ -151,3 +151,23 @@ canvas.chart { width: 100%; display: block; }
 .hero .row { flex-wrap: wrap; }
 .tx-sum { overflow-wrap: anywhere; max-width: 45%; }
 @media (max-width: 380px) { .seg button { padding: 9px 5px; font-size: 13px; } }
+
+/* Keep familiar cards, but reduce scroll and cap transaction DOM size. */
+.wrap { flex-wrap: wrap; }
+.check-line { display:flex; gap:8px; align-items:center; margin:12px 0; }
+input[type=checkbox] { width:18px; height:18px; flex-shrink:0; accent-color:var(--accent); }
+.selectable-tx { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); }
+.selectable-tx .tx-row { flex:1; min-width:0; border:0; }
+.tx-list { padding:4px 12px; }
+.tx-name { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.tx-meta { overflow-wrap:anywhere; }
+.tx-sum { font-variant-numeric:tabular-nums; font-size:14px; }
+.tx-row.excluded { opacity:.55; }
+.pager { justify-content:space-between; margin:16px 0 24px; }
+.btn:disabled { opacity:.4; cursor:default; }
+summary { cursor:pointer; padding:4px 0; }
+.field select { color-scheme:dark; }
+#view { padding-bottom:calc(160px + env(safe-area-inset-bottom)); }
+#ops-search { min-width:0; }
+.page-head > div { min-width:0; }
+.page-head h1 { font-size:clamp(18px,5.2vw,22px); overflow-wrap:break-word; }

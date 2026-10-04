@@ -15,7 +15,7 @@ for (const [text,amount,type,balance] of [
 ]) test(text,()=>{const p=sber(text);assert.ok(p);assert.equal(p.amount,amount);assert.equal(p.type,type);assert.equal(p.balance,balance);});
 for (const text of ['Баланс: 500 ₽','Ваш код: 1234. Оплата 500 ₽','Покупка 500 ₽ отклонена','Скидка на покупку 500 ₽','Покупка 100 ₽ и покупка 200 ₽','Просто 100 ₽','Перевод не выполнен 100 ₽']) test('reject '+text,()=>assert.equal(sber(text),null));
 test('reject unrelated app',()=>assert.equal(parse('chat.app','','Оплата 500 ₽'),null));
-test('category respects operation type',()=>assert.equal(sber('Возврат 299 ₽ OZON').categoryId,'other_inc'));
+test('category respects operation type',()=>assert.equal(sber('Возврат 299 ₽ OZON').categoryId,'refund'));
 test('merchant and card',()=>{const p=sber('MIR-1234 Покупка 450 ₽ ПЯТЁРОЧКА. Баланс 500 ₽');assert.equal(p.note,'ПЯТЁРОЧКА');assert.equal(p.last4,'1234');assert.equal(p.categoryId,'food');});
 test('same notification dedup, distinct identical purchases retained',()=>{
  const item={pkg:'ru.sberbankmobile',title:'Сбер',text:'Покупка 100 ₽ SHOP',key:'bank:1',ts:1000};

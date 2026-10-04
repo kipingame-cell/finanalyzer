@@ -1,6 +1,8 @@
+import { guessCategory } from './categories.js';
+export { guessCategory } from './categories.js';
 import { isOwnTransfer } from './transfers.js';
 // Conservative notification parser: require an operation, never use an account balance as its amount.
-import { CATEGORY_KEYWORDS, DEFAULT_CATEGORIES, KNOWN_BANK_PACKAGES } from './config.js';
+import { KNOWN_BANK_PACKAGES } from './config.js';
 export const BANKS = [
   { id: 'sber',    name: 'Сбер',           pkgs: ['ru.sberbankmobile'], senders: ['900', 'sberbank', 'сбербанк'], kw: ['сбербанк', 'sberbank', 'мир сбер'] },
   { id: 'vtb',     name: 'ВТБ',            pkgs: ['ru.vtb24.mobilebanking.android'], senders: ['vtb', 'втб'], kw: ['втб', 'vtb'] },
@@ -97,16 +99,6 @@ function merchant(text, op) {
   const prefix = text.slice(op.marker.end, op.index).replace(/[*•]\d{4}/g,'').replace(/^[\s:;,—–-]+|[\s:;,—–-]+$/g,'');
   return prefix && !/карт|сч[её]т|\d{4}/i.test(prefix) ? prefix.slice(0,80) : '';
 }
-export function guessCategory(text, type) {
-  const allowed = new Set(DEFAULT_CATEGORIES.filter(c=>c.type === type).map(c=>c.id));
-  const low = normalize(text).toLowerCase();
-  let best = null, length = 0;
-  for (const [id, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (!allowed.has(id)) continue;
-    for (const word of words) if (low.includes(word) && word.length > length) {best=id;length=word.length;}
-  }
-  return best || (type === 'income' ? 'other_inc' : 'other_exp');
-}
 export function parseNotification(pkg, title, text) {
   const full = normalize(`${title || ''}\n${text || ''}`);
   const op = operation(full);
@@ -119,7 +111,7 @@ export function parseNotification(pkg, title, text) {
   if (op.type === 'income') {
     for (const [re,label] of [[/зарплат/i,'Зарплата'],[/аванс/i,'Аванс'],[/преми/i,'Премия'],[/возврат/i,'Возврат'],[/к[эе]шб[эе]к|cashback/i,'Кэшбэк']]) if (re.test(full)) {note=label;break;}
   }
-  return {type:op.type, amount:op.amount, ownTransfer:isOwnTransfer({note:full}), categoryId:guessCategory(note || full,op.type),
+  return {type:op.type, amount:op.amount, ownTransfer:isOwnTransfer({note:full}), categoryId:guessCategory(full,op.type),
     note:note || normalize(title).slice(0,80), source:'notification', hash:notifHash(pkg,title,text),
     contentHash: notifHash(bank.id, '', normalize(text).toLowerCase()),
     rawText:full.slice(0,1000), bankId:bank.id, bankName:bank.name, last4:card,
