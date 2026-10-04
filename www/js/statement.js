@@ -98,7 +98,10 @@ function parseYandexBlocks(text) {
   // Summary totals and bank signature/address are not transaction rows.
   text=text.split(/(?:Всего\s+(?:приходных|расходных)\s+операций|С уважением,)/i)[0];
 
-  const start = /(?:исходящий перевод(?:\s+СБП)?|входящий перевод(?:\s+СБП)?|оплата\s+СБП\s+QR|возврат\s+средств(?:\s+СБП\s+QR)?|оплата товаров и услуг|возврат(?:\s+за)?(?:\s+оплаты|\s+покупки|\s+товаров и услуг)|пополнение сч[её]та|зачисление денежных средств|выплата процентов|начисление процентов|снятие наличных)/gi;
+  // Balance rows delimit records but are never transactions (also in flattened text).
+  text=text.replace(/(?:Входящий|Исходящий)\s+остаток\s+за\s+\d{2}\.\d{2}\.\d{4}\s+[+−–-]?\s*[\d ]+[.,]\d{2}\s*(?:₽|руб\.?|RUB|RUR)/gi,' ');
+
+  const start = /(?:внутрибанковский\s+перевод\s+на|отмена\s+оплаты\s+услуг|исходящий перевод(?:\s+СБП)?|входящий перевод(?:\s+СБП)?|оплата\s+(?:СБП|Сбер)\s+QR|возврат\s+средств(?:\s+СБП\s+QR)?|оплата товаров и услуг|возврат(?:\s+за)?(?:\s+оплаты|\s+покупки|\s+товаров и услуг)|пополнение сч[её]та|зачисление денежных средств|выплата процентов|начисление процентов|снятие наличных)/gi;
   const markers=[...text.matchAll(start)];
   if(!markers.length)return null;
   const datesRe=/\b\d{2}\.\d{2}\.\d{4}\b/g;
@@ -112,13 +115,15 @@ function parseYandexBlocks(text) {
     if(dates.length!==2){reject('Ожидались две даты одной операции; проверьте разбиение строк');continue;}
     if(!dates.every(d=>statementDate(d[0]))){reject('Некорректная дата операции');continue;}
     if(/USD|EUR|[$€]/i.test(raw)){reject('Разные валюты: требуется сверка суммы в валюте счёта');continue;}
-    if(/отмен[а-яё]*|отклон[а-яё]*|не выполнен/i.test(raw)){reject('Операция не завершена');continue;}
+    const reversal=/^отмена\s+оплаты\s+услуг$/i.test(markers[i][0]);
+    if(/отклон[а-яё]*|не выполнен/i.test(raw)||(!reversal&&/отмен[а-яё]*/i.test(raw))){reject('Операция не завершена');continue;}
     const amountRe=/([+−–-]?\s*(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)[.,]\d{2})\s*(?:₽|руб\.?|RUB|RUR|[рp])(?=$|[^a-zа-яё])/gi;
     const amounts=[...raw.matchAll(amountRe)];
     if(amounts.length!==2){reject('Ожидались две суммы в колонках выписки');continue;}
     const values=amounts.map(m=>money(m[1]));
     if(values.some(v=>v===null||v===0)||values[0]!==values[1]){reject('Суммы в двух колонках различаются — нужна проверка');continue;}
-    const type=/^(?:входящий|возврат|пополнение|зачисление|выплата|начисление)/i.test(markers[i][0])?'income':'expense';
+    const type=reversal||/^(?:входящий|возврат|пополнение|зачисление|выплата|начисление)/i.test(markers[i][0])?'income':'expense';
+    if(reversal&&!amounts.every(m=>/^\+/.test(m[1].trim()))){reject('Отмена оплаты требует положительного зачисления в обеих колонках');continue;}
     const signed=amounts.some(m=>/^[+−–-]/.test(m[1].trim()));
     if(signed&&((values[0]<0)!==(type==='expense'))){reject('Знак суммы противоречит типу операции');continue;}
     const time=raw.match(/(?:\sв\s+|\s)(\d{2}:\d{2})(?::(\d{2}))?(?!\d)/);

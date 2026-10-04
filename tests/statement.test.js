@@ -131,3 +131,51 @@ test('page break inside a transaction preserves continuation',()=>{
 test('missing totals are not presented as a successful reconciliation',()=>{
  const r=parseStatementText(yandexLayout);assert.equal(r.reconciliation.income.expected,null);assert.equal(r.reconciliation.expense.difference,null);
 });
+
+// Anonymized regression cases for all 19 reported joined blocks.
+const joinedCases=[
+ ['income',500,[863.93]],['expense',3183.94,[199],'transfer'],
+ ['income',400,[230],'transfer'],['expense',177,[109.98,179.99]],
+ ['expense',420,[151,167]],['expense',310,[644.94]],
+ ['expense',35,[126]],['expense',35,[116]],['income',2000,[200]],
+ ['expense',460,[294]],['expense',160,[497.94,99.99]],
+ ['expense',700,[174.99]],['income',1367,[156]],['income',135,[414.97]],
+ ['expense',897.15,[401.16]],['expense',40,[600]],
+ ['expense',1975,[548],'reversal'],['income',360,[15],'transfer'],
+ ['expense',632,[],'balance']
+];
+function tableRow(label,amount,type,time='16:45') {
+ const sum=(type==='income'?'+':'–')+amount.toFixed(2).replace('.',',');
+ return `${label} 05.10.2025 06.10.2025 ${sum} ₽ ${sum} ₽ в ${time}`;
+}
+test('all reported joined block shapes preserve every operation, sign and time',()=>{
+ for(const [type,amount,next,variant] of joinedCases) {
+  const first=tableRow(type==='income'?'Входящий перевод СБП, Тест':'Оплата товаров и услуг SHOP',amount,type);
+  const label=variant==='transfer'?'Внутрибанковский перевод на +7 900 000-00-00, Тест':variant==='reversal'?'Отмена оплаты услуг TEST':'Оплата Сбер QR (SHOP_P_QR)';
+  const nextType=variant==='reversal'?'income':'expense';
+  const text=[first,...next.map(n=>tableRow(label,n,nextType,'16:46')),variant==='balance'?'Исходящий остаток за 03.10.2026 55 378,30 ₽':''].join(' ');
+  const r=parseStatementText(text);
+  assert.equal(r.rejected.length,0,text);
+  assert.deepEqual(r.operations.map(o=>[o.type,o.amount]),[[type,amount],...next.map(n=>[nextType,n])]);
+  assert.equal(r.operations[0].date,'2025-10-05T13:45:00.000Z');
+  assert.ok(r.operations.slice(1).every(o=>o.date==='2025-10-05T13:46:00.000Z'));
+  assert.ok(r.operations.every(o=>!o.note.includes('остаток')));
+ }
+});
+test('Sber QR and internal transfer labels can wrap across PDF lines',()=>{
+ const r=parseStatementText(tableRow('Оплата\nСбер QR (SHOP)',109.98,'expense')+'\n'+tableRow('Внутрибанковский\nперевод на +7 900 000-00-00',199,'expense'));
+ assert.deepEqual(r.operations.map(o=>o.amount),[109.98,199]);assert.equal(r.rejected.length,0);
+});
+test('payment reversal requires explicit matching positive booked amounts',()=>{
+ for(const sums of ['–548,00 ₽ –548,00 ₽','548,00 ₽ 548,00 ₽','+548,00 ₽ +549,00 ₽']) {
+  const r=parseStatementText('Отмена оплаты услуг SHOP 04.04.2026 04.04.2026 '+sums+' в 19:48');
+  assert.equal(r.operations.length,0);assert.equal(r.rejected.length,1);
+ }
+ const r=parseStatementText(tableRow('Оплата товаров и услуг SHOP отменена',548,'expense'));
+ assert.equal(r.operations.length,0);assert.equal(r.rejected.length,1);
+});
+test('balance furniture does not consume next operation or bank totals',()=>{
+ const r=parseStatementText('Входящий остаток за 01.10.2026 100,00 ₽ '+tableRow('Оплата Сбер QR SHOP',10,'expense')+' Исходящий остаток за 03.10.2026 90,00 ₽ '+tableRow('Отмена оплаты услуг SHOP',5,'income')+' Всего расходных операций –10,00 ₽ Всего приходных операций +5,00 ₽');
+ assert.equal(r.operations.length,2);assert.equal(r.rejected.length,0);
+ assert.equal(r.reconciliation.expense.difference,0);assert.equal(r.reconciliation.income.difference,0);
+});
