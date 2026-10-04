@@ -84,3 +84,34 @@ export async function injectTestNotification() {
   if (!nl) return false;
   try { await nl.injectTest(); return true; } catch (e) { return false; }
 }
+
+// One synchronous save contains transactions and dedup markers: retry after a
+// bridge failure cannot insert the same notification twice.
+export function importSuggestions(suggestions) {
+  const st = getState();
+  const snapshot = JSON.parse(JSON.stringify(st));
+  let count = 0;
+  for (const p of [...suggestions].sort((a, b) => a.ts - b.ts)) {
+    if (st.seenNotifHashes.includes(p.hash) || st.dismissedNotifHashes.includes(p.hash) || st.transactions.some(t => t.hash === p.hash)) continue;
+    if (!Number.isFinite(p.amount) || p.amount <= 0) continue;
+    const id = p.accountId || 'main';
+    let account = st.accounts.find(a => a.id === id);
+    if (!account) {
+      account = { id, name: p.accountName || id, bankId: p.bankId, balance: null };
+      st.accounts.push(account);
+    }
+    st.transactions.unshift({ id: 'n_' + p.hash, type: p.type, amount: p.amount,
+      categoryId: p.categoryId, accountId: id, note: p.note,
+      date: new Date(p.ts).toISOString(), source: 'notification', hash: p.hash });
+    if (p.balance != null && (!account.balanceAt || p.ts >= account.balanceAt)) {
+      account.balance = p.balance; account.balanceAt = p.ts;
+    }
+    st.seenNotifHashes.push(p.hash);
+    count++;
+  }
+  if (count) {
+    try { save(); }
+    catch (error) { Object.assign(st, snapshot); throw error; }
+  }
+  return count;
+}

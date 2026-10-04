@@ -44,8 +44,10 @@ public class NotificationListenerPlugin extends Plugin {
 
     @PluginMethod
     public void clearNotifications(PluginCall call) {
-        getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE)
-                .edit().putString("items", "[]").apply();
+        synchronized (BankNotificationService.QUEUE_LOCK) {
+            getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE)
+                    .edit().putString("items", "[]").commit();
+        }
         call.resolve();
     }
 
@@ -55,18 +57,9 @@ public class NotificationListenerPlugin extends Plugin {
     @PluginMethod
     public void injectTest(PluginCall call) {
         try {
-            SharedPreferences sp = getContext().getSharedPreferences("bank_notifs", Context.MODE_PRIVATE);
-            org.json.JSONArray arr = new org.json.JSONArray(sp.getString("items", "[]"));
-            org.json.JSONObject o = new org.json.JSONObject();
-            String stamp = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-                    .format(new java.util.Date());
-            o.put("pkg", "ru.sberbankmobile");
-            o.put("title", "СберБанк");
-            o.put("text", "Покупка 450,00 ₽, ТЕСТ-МАГАЗИН. Баланс: 12 340,55 ₽ (тест " + stamp + ")");
-            o.put("ts", System.currentTimeMillis());
-            arr.put(o);
-            while (arr.length() > 300) arr.remove(0);
-            sp.edit().putString("items", arr.toString()).apply();
+            long now = System.currentTimeMillis();
+            BankNotificationService.append(getContext(), "ru.sberbankmobile", "СберБанк",
+                    "Покупка 450,00 ₽, ТЕСТ-МАГАЗИН. Баланс: 12 340,55 ₽", now, "test:" + now);
             call.resolve();
         } catch (Exception e) {
             call.reject("inject failed", e);

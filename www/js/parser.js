@@ -1,12 +1,5 @@
-// Парсер текстов банковских уведомлений/SMS → черновик операции.
-// Знает форматы: Сбер (push и SMS от 900), ВТБ, Т-Банк, Альфа, Яндекс Банк,
-// Ozon Банк, WB Банк, Райффайзен, Газпромбанк, Совкомбанк, Почта Банк, МТС и др.
-// Работает и с нативным слушателем уведомлений, и с вставленным вручную текстом.
-import { CATEGORY_KEYWORDS } from './config.js';
-
-// ---------- Справочник банков ----------
-// pkgs — package name приложения банка; senders — отправитель SMS/push (title уведомления);
-// kw — ключевые слова в тексте, по которым можно опознать банк.
+// Conservative notification parser: require an operation, never use an account balance as its amount.
+import { CATEGORY_KEYWORDS, DEFAULT_CATEGORIES, KNOWN_BANK_PACKAGES } from './config.js';
 export const BANKS = [
   { id: 'sber',    name: 'Сбер',           pkgs: ['ru.sberbankmobile'], senders: ['900', 'sberbank', 'сбербанк'], kw: ['сбербанк', 'sberbank', 'мир сбер'] },
   { id: 'vtb',     name: 'ВТБ',            pkgs: ['ru.vtb24.mobilebanking.android'], senders: ['vtb', 'втб'], kw: ['втб', 'vtb'] },
@@ -43,179 +36,115 @@ function detectBank(pkg, title, fullText) {
   return UNKNOWN_BANK;
 }
 
-const INCOME_WORDS = ['зачислен', 'зачисление', 'пополнен', 'пополнение', 'получен перевод', 'перевод от', 'возврат', 'зарплата', 'аванс', 'премия', 'начислены', 'кэшбэк', 'cashback', 'вам перевели', 'поступление'];
-const EXPENSE_WORDS = ['списание', 'списан', 'покупка', 'оплата', 'оплачено', 'перевод', 'снятие', 'выдача наличных', 'платёж', 'платеж', 'удержан', 'комиссия', 'payment', 'purchase'];
 
-// Суммы: 1 234,56 ₽ · 1234.56 RUB · 850 руб. · 1 234,56р · 40p (SMS Сбера) · 299₽
-const AMOUNT_RE = /(\d{1,3}(?:[ \u00A0\u202F]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(?:₽|руб(?:\.|лей|ля|ь)?(?![а-яёa-z])|rub(?![a-z])|rur(?![a-z])|[рp](?![а-яёa-z]))/i;
-
+const MONEY = /([+−-]?\s*(?:\d{1,3}(?:[ ,]\d{3})+|\d+)(?:[.,]\d{1,2})?)\s*(₽|руб(?:лей|ля|ль|\.)?|RUB|RUR|[рp])(?=$|[^a-zа-яё])/gi;
+const INCOME = /зачислен[a-zа-яё]*|пополнен[a-zа-яё]*|возврат[a-zа-яё]*|к[эе]шб[эе]к|cashback|зарплат[a-zа-яё]*|аванс|преми[a-zа-яё]*|поступлен[a-zа-яё]*|вам перевели|получен перевод|начислен[a-zа-яё]*|перевод\s+от/gi;
+const EXPENSE = /списан[a-zа-яё]*|покупк[a-zа-яё]*|оплат[a-zа-яё]*|перевод[a-zа-яё]*|снят[a-zа-яё]*|выдача наличных|плат[её]ж[a-zа-яё]*|удержан[a-zа-яё]*|комиссия|payment|purchase|подписка/gi;
+const REJECT = /одноразов|подтверждени|парол|никому не сообщайте|\bOTP\b|(?:^|\s)код(?:\s|:)|отклон[её]н|отказ|не выполнен|не исполнен|не прош[её]л|недостаточно средств|отмен[её]н|оформите|предодобрен|скидк|кредитный лимит|успейте/i;
+const BALANCE = /баланс|остаток|доступно|лимит/i;
+function normalize(value) { return String(value ?? '').replace(/[\u00a0\u202f\t]/g, ' ').replace(/[\u200b-\u200d\ufeff]/g, '').replace(/ +/g, ' ').trim(); }
 export function notifHash(pkg, title, text) {
-  const s = (pkg || '') + '|' + (title || '') + '|' + (text || '');
+  const s = `${pkg || ''}|${title || ''}|${text || ''}`;
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
   return 'h' + h.toString(36);
 }
-
-function parseAmountMatch(m) {
-  const intPart = m[1].replace(/[ \u00A0\u202F]/g, '');
-  const val = parseFloat(intPart + (m[2] ? '.' + m[2] : ''));
-  return isFinite(val) && val > 0 ? val : null;
+function numeric(raw) {
+  let s = raw.replace(/[+−\-\s]/g, '');
+  if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s)) s = s.replace(/,/g, '');
+  else s = s.replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
 }
-
-function extractAmount(text) {
-  const m = text.match(AMOUNT_RE);
-  return m ? parseAmountMatch(m) : null;
+function operation(text) {
+  if (REJECT.test(text)) return null;
+  const markers = [ ...text.matchAll(INCOME)].map(m => ({start:m.index,end:m.index+m[0].length,type:'income'}));
+  for (const m of text.matchAll(EXPENSE)) {
+    if (!markers.some(x=> m.index >= x.start && m.index < x.end)) markers.push({start:m.index,end:m.index+m[0].length,type:'expense'});
+  }
+  markers.sort((a,b)=>a.start-b.start);
+  if (!markers.length) return null;
+  const candidates = [];
+  let balance = null;
+  for (const m of text.matchAll(MONEY)) {
+    const amount = numeric(m[1]);
+    const prefix = text.slice(0,m.index);
+    const lastBalance = [...prefix.matchAll(/баланс|остаток|доступно|лимит/gi)].pop();
+    const before = markers.filter(x=>x.start < m.index).pop();
+    if (lastBalance && (!before || lastBalance.index > before.start)) { if (balance === null) balance = amount; continue; }
+    if (amount === null || amount <= 0) continue;
+    const nearest = before || markers.find(x=>x.start >= m.index && x.start-m.index-m[0].length < 45);
+    if (!nearest) continue;
+    candidates.push({amount, index:m.index, end:m.index+m[0].length, type:nearest.type, marker:nearest});
+  }
+  // Multiple operation amounts need review; never silently merge two operations.
+  if (candidates.length !== 1) return null;
+  const selected = candidates[0];
+  if (selected.type === 'expense' && /перевод/i.test(text.slice(selected.marker.start, selected.marker.end)) && /^\s*от\s+/i.test(text.slice(selected.end))) selected.type = 'income';
+  return {...selected, balance};
 }
-
-// «Баланс: 3756.33р» / «Доступно 12 340 ₽» — остаток на счёте из текста банка
-function extractBalance(text) {
-  const m = text.match(/(?:баланс|доступно|остаток)[:\s]+/i);
-  if (!m) return null;
-  const a = text.slice(m.index + m[0].length).match(AMOUNT_RE);
-  return a ? parseAmountMatch(a) : null;
-}
-
-// Номер счёта/карты: «СЧЁТ0150», «Карта *5678», «MIR-1234», «*1234»
-function extractLast4(text) {
-  let m = text.match(/сч[её]т\s*[*.•]?\s*(\d{4,})/i);
-  if (!m) m = text.match(/карта\s*[*.•xх]?\s*\*?\s*(\d{4})/i);
-  if (!m) m = text.match(/(?:mir|visa|mastercard|мир|мастеркард)\s*[*.•\-]?\s*\*?\s*(\d{4})/i);
-  if (!m) m = text.match(/[*•]{1,4}\s?(\d{4})\b/);
+export function isFinancialText(text) { return !!operation(normalize(text)); }
+function last4(text) {
+  const m = text.match(/(?:сч[её]т|карт[аы]|mir|visa|mastercard|мир)\s*[*•xх.\-]*\s*(\d{4,})/i) || text.match(/[*•]{1,4}\s*(\d{4})\b/);
   return m ? m[1].slice(-4) : '';
 }
-
-// Игнорируем технические уведомления без денежной операции
-export function isFinancialText(text) {
-  if (!text) return false;
-  if (!AMOUNT_RE.test(text)) return false;
-  const low = text.toLowerCase();
-  if (/код |код:|одноразов|подтверждени|парол|никому не сообщайте/i.test(low)) return false;
-  if (/одобрен|предодобрен|кредитный лимит|оформите|успейте|акция|скидк/i.test(low) && !INCOME_WORDS.concat(EXPENSE_WORDS).some(w => low.includes(w))) return false;
-  if (/(остаток|баланс|доступно)[: ]/i.test(low) && !INCOME_WORDS.concat(EXPENSE_WORDS).some(w => low.includes(w))) return false;
-  return true;
+function merchant(text, op) {
+  let tail = text.slice(op.end).replace(/^[\s,;:.—–-]+/, '').replace(/^(?:в|на|за|от|получателю)\s+/i, '');
+  tail = tail.split(/баланс|остаток|доступно|лимит|карт[аы]|сч[её]т|комиссия|к[эе]шб[эе]к|\n/i)[0];
+  tail = tail.replace(/\s+\d{2}[.:]\d{2}.*$/, '').replace(/[\s,;:.]+$/, '').trim();
+  if (tail && !/^(?:RUB|RUR|СБП|SBP|выполнен|успешно|зачислен)/i.test(tail)) return tail.slice(0,80);
+  const prefix = text.slice(op.marker.end, op.index).replace(/[*•]\d{4}/g,'').replace(/^[\s:;,—–-]+|[\s:;,—–-]+$/g,'');
+  return prefix && !/карт|сч[её]т|\d{4}/i.test(prefix) ? prefix.slice(0,80) : '';
 }
-
-function detectType(text) {
-  const low = text.toLowerCase();
-  if (/зачислен|пополнен|возврат|кэшбэк|cashback|зарплат|аванс|преми|поступлен|вам перевели|получен перевод|начислен/.test(low)) return 'income';
-  // «Перевод 500р от ИВАН И.» — приход; «перевод 40p OZON» — расход
-  if (/перевод/.test(low) && /\sот\s+[a-zа-яё0-9]/i.test(low)) return 'income';
-  if (/списание|списан|покупка|оплата|оплачено|перевод|снятие|выдача наличных|плат[её]ж|удержан|комиссия|payment|purchase/.test(low)) return 'expense';
-  return 'expense'; // по умолчанию трата
-}
-
-const MERCH_TAIL_RE = /\s*(баланс|доступно|остаток|карта|сч[её]т|лимит|сбп|sbp|кэшбэк|бонусы|комиссия|по курсу).*$/i;
-const MERCH_OP_PREFIX_RE = /^(покупка|оплата|перевод|списание|снятие|зачисление|пополнение|платёж|платеж|выдача наличных|комиссия|от)\s+/i;
-
-function cleanMerchant(s) {
-  return (s || '').replace(/[.,;:!?]+$/, '').replace(/\s{2,}/g, ' ').trim()
-    .replace(/^(россия|moskva|москва|г |russia)\s+/i, '').slice(0, 40);
-}
-
-function extractMerchant(text) {
-  // Магазин обычно идёт сразу после суммы: «перевод 40p OZON Баланс: …»
-  const am = text.match(AMOUNT_RE);
-  if (am) {
-    const after = text.slice(am.index + am[0].length);
-    const m = after.match(/^\s*[,;.\-—–]?\s*(?:в\s+|на\s+|за\s+)?([A-Za-zА-Яа-яЁё0-9 &*._+'"«»-]{2,40})/);
-    if (m) {
-      let merch = m[1].replace(MERCH_TAIL_RE, '');
-      merch = cleanMerchant(merch.replace(MERCH_OP_PREFIX_RE, ''));
-      if (merch.length >= 2 && !/^\d+$/.test(merch) && !/^(баланс|доступно|остаток)$/i.test(merch)) return merch;
-    }
-  }
-  // «Перевод от Иван И.» / «зачисление … от АО Ромашка»
-  let m = text.match(/(?:перевод|платёж|платеж|зачисление)\s+(?:[\d\s.,]+[рp₽]?\s+)?от\s+([A-Za-zА-Яа-яЁё0-9 &*._-]{2,40})/i);
-  if (m) return cleanMerchant(m[1].replace(MERCH_TAIL_RE, ''));
-  // «Подписка Яндекс Плюс 299 ₽»
-  m = text.match(/(?:подписка|тариф)\s+([A-Za-zА-Яа-яЁё0-9 &+._-]{2,30}?)\s*\d/i);
-  if (m) return cleanMerchant(m[1]);
-  // КAPS-название магазина где-то в тексте
-  m = text.match(/([A-ZА-ЯЁ][A-ZА-ЯЁ0-9*& -]{3,30})/);
-  if (m && !/^(RUB|RUR|СБП|SBP|СЧЁТ|КАРТА|MIR|VISA)/.test(m[1])) return cleanMerchant(m[1]);
-  return '';
-}
-
-// Для доходов точнее взять повод из ключевых слов, а не из текста
-function incomeReason(text) {
-  const low = text.toLowerCase();
-  if (low.includes('зарплат')) return 'Зарплата';
-  if (low.includes('аванс')) return 'Аванс';
-  if (low.includes('преми')) return 'Премия';
-  if (low.includes('кэшбэк') || low.includes('cashback')) return 'Кэшбэк';
-  if (low.includes('возврат')) return 'Возврат';
-  return null;
-}
-
 export function guessCategory(text, type) {
-  const low = ' ' + (text || '').toLowerCase() + ' ';
-  let best = null, bestLen = 0;
-  for (const [catId, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    for (const w of words) {
-      if (low.includes(w) && w.length > bestLen) { best = catId; bestLen = w.length; }
-    }
+  const allowed = new Set(DEFAULT_CATEGORIES.filter(c=>c.type === type).map(c=>c.id));
+  const low = normalize(text).toLowerCase();
+  let best = null, length = 0;
+  for (const [id, words] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (!allowed.has(id)) continue;
+    for (const word of words) if (low.includes(word) && word.length > length) {best=id;length=word.length;}
   }
-  if (best) return best;
-  return type === 'income' ? 'other_inc' : 'other_exp';
+  return best || (type === 'income' ? 'other_inc' : 'other_exp');
 }
-
-// Главный вход: уведомление → черновик операции или null.
-// Дополнительно возвращает банк, счёт/карту и остаток по SMS (если есть).
 export function parseNotification(pkg, title, text) {
-  const full = ((title || '') + ' ' + (text || '')).trim();
-  const body = (text || title || '');
-  if (!isFinancialText(full)) return null;
-  const amount = extractAmount(full);
-  if (!amount) return null;
-  const type = detectType(full);
+  const full = normalize(`${title || ''}\n${text || ''}`);
+  const op = operation(full);
+  if (!op) return null;
   const bank = detectBank(pkg, title, full);
-  const last4 = extractLast4(full);
-  const balance = extractBalance(full);
-  let merchant = extractMerchant(body);
-  if (type === 'income') merchant = incomeReason(full) || merchant;
-  const categoryId = guessCategory(full + ' ' + merchant, type);
-  const accountId = bank.id + (last4 ? '_' + last4 : '');
-  const accountName = bank.name + (last4 ? ' •' + last4 : '');
-  return {
-    type, amount, categoryId,
-    note: merchant || (title || '').slice(0, 40),
-    source: 'notification',
-    hash: notifHash(pkg, title, text),
-    rawText: full.slice(0, 300),
-    bankId: bank.id, bankName: bank.name, last4,
-    accountId: bank.id === 'other' && !last4 ? '' : accountId,
-    accountName: bank.id === 'other' && !last4 ? '' : accountName,
-    balance,
-  };
-}
-
-// Пакетный разбор списка уведомлений от нативного модуля
-export function parseNotificationList(items, seenHashes, dismissedHashes) {
-  const out = [];
-  for (const it of items) {
-    const p = parseNotification(it.pkg, it.title, it.text);
-    if (!p) continue;
-    if (seenHashes.includes(p.hash) || dismissedHashes.includes(p.hash)) continue;
-    p.ts = it.ts || Date.now();
-    out.push(p);
+  // Ignore unrelated shopping/chat notifications. Manual paste remains available.
+  if (pkg && pkg !== 'manual-paste' && bank.id === 'other' && !KNOWN_BANK_PACKAGES.includes(pkg)) return null;
+  const card = last4(full);
+  let note = merchant(full,op);
+  if (op.type === 'income') {
+    for (const [re,label] of [[/зарплат/i,'Зарплата'],[/аванс/i,'Аванс'],[/преми/i,'Премия'],[/возврат/i,'Возврат'],[/к[эе]шб[эе]к|cashback/i,'Кэшбэк']]) if (re.test(full)) {note=label;break;}
   }
-  // новые сверху, дедуп по хэшу внутри пачки
-  const uniq = new Map();
-  out.forEach(p => uniq.set(p.hash, p));
-  return [...uniq.values()].sort((a, b) => b.ts - a.ts);
+  return {type:op.type, amount:op.amount, categoryId:guessCategory(note || full,op.type),
+    note:note || normalize(title).slice(0,80), source:'notification', hash:notifHash(pkg,title,text),
+    rawText:full.slice(0,1000), bankId:bank.id, bankName:bank.name, last4:card,
+    accountId:bank.id === 'other' && !card ? '' : bank.id+(card ? '_'+card : ''),
+    accountName:bank.id === 'other' && !card ? '' : bank.name+(card ? ' •'+card : ''), balance:op.balance};
 }
-
-// Разбор вставленного вручную текста (может быть несколько уведомлений построчно/абзацами)
+export function parseNotificationList(items, seenHashes = [], dismissedHashes = []) {
+  const ignored = new Set([...seenHashes,...dismissedHashes]);
+  const unique = new Map();
+  for (const it of Array.isArray(items) ? items : []) {
+    if (!it || typeof it !== 'object') continue;
+    const p = parseNotification(it.pkg,it.title,it.text);
+    if (!p || ignored.has(p.hash)) continue;
+    const ts = Number(it.ts);
+    p.ts = Number.isFinite(ts) && ts > 0 ? ts : Date.now();
+    // Android updates of one notification share its key and post time;
+    // separate identical purchases at different times must remain separate.
+    if (it.key && ts > 0) {
+      const legacyHash = p.hash;
+      p.hash = notifHash(it.pkg,it.key,String(ts));
+      if (ignored.has(p.hash) || ignored.has(legacyHash)) continue;
+    }
+    unique.set(p.hash,p);
+  }
+  return [...unique.values()].sort((a,b)=>b.ts-a.ts);
+}
 export function parsePastedText(text) {
-  const chunks = text.split(/\n\s*\n|\n(?=[A-ZА-ЯЁ][^\n]{0,40}:)/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  for (const c of chunks) {
-    const p = parseNotification('manual-paste', '', c);
-    if (p) out.push(p);
-  }
-  if (!out.length) {
-    const p = parseNotification('manual-paste', '', text);
-    if (p) out.push(p);
-  }
-  return out;
+  const chunks = String(text || '').split(/\n\s*\n|\n(?=(?:Покупка|Оплата|Перевод|Списание|Зачисление|Пополнение|MIR-|VISA-|СЧ[ЕЁ]Т))/i).map(s=>s.trim()).filter(Boolean);
+  return chunks.map(c=>parseNotification('manual-paste','',c)).filter(Boolean);
 }
