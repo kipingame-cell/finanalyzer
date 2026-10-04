@@ -88,7 +88,17 @@ function parseCsv(text) {
 // Yandex PDF tables can interleave description, operation date, posting date,
 // amount in operation currency and amount in account currency on the same line.
 function parseYandexBlocks(text) {
-  const start = /(?:исходящий перевод(?:\s+СБП)?|входящий перевод(?:\s+СБП)?|оплата товаров и услуг|возврат(?:\s+за)?(?:\s+оплаты|\s+покупки|\s+товаров и услуг)|пополнение сч[её]та|зачисление денежных средств|выплата процентов|начисление процентов|снятие наличных)/gi;
+  const totals={income:null,expense:null};
+  for(const m of norm(text).matchAll(/Всего\s+(приходных|расходных)\s+операций\s+([+−–-]?\s*(?:\d{1,3}(?: \d{3})+|\d+)[.,]\d{2})\s*(?:₽|руб\.?|RUB|RUR|[рp])(?=$|[^a-zа-яё])/gi)) {
+    const n=money(m[2]);if(n!==null)totals[m[1].toLowerCase()==='приходных'?'income':'expense']=Math.abs(n);
+  }
+  // Page furniture can occur inside a wrapped transaction. Remove only known
+  // header/footer lines, retaining the continuation of the transaction itself.
+  text=text.replace(/^\s*(?:Продолжение на следующей странице|Страница\s+\d+\s+из\s+\d+|Описание операции\s+Дата.*|Сумма в валюте(?:\s+Сумма в валюте)?|операции обработки операции ЭСП|МСК\s+МСК)\s*$/gmi,'');
+  // Summary totals and bank signature/address are not transaction rows.
+  text=text.split(/(?:Всего\s+(?:приходных|расходных)\s+операций|С уважением,)/i)[0];
+
+  const start = /(?:исходящий перевод(?:\s+СБП)?|входящий перевод(?:\s+СБП)?|оплата\s+СБП\s+QR|возврат\s+средств(?:\s+СБП\s+QR)?|оплата товаров и услуг|возврат(?:\s+за)?(?:\s+оплаты|\s+покупки|\s+товаров и услуг)|пополнение сч[её]та|зачисление денежных средств|выплата процентов|начисление процентов|снятие наличных)/gi;
   const markers=[...text.matchAll(start)];
   if(!markers.length)return null;
   const datesRe=/\b\d{2}\.\d{2}\.\d{4}\b/g;
@@ -96,7 +106,7 @@ function parseYandexBlocks(text) {
   if(!markers.some((m,i)=>(text.slice(m.index,markers[i+1]?.index??text.length).match(datesRe)||[]).length>=2))return null;
   const operations=[],rejected=[];
   for(let i=0;i<markers.length;i++) {
-    const raw=text.slice(markers[i].index,markers[i+1]?.index??text.length).trim();
+    const raw=norm(text.slice(markers[i].index,markers[i+1]?.index??text.length));
     const reject=reason=>rejected.push({raw,reason});
     const dates=[...raw.matchAll(datesRe)];
     if(dates.length!==2){reject('Ожидались две даты одной операции; проверьте разбиение строк');continue;}
@@ -118,7 +128,13 @@ function parseYandexBlocks(text) {
     const op=operation(date,Math.abs(values[0]),type,note,raw);
     if(op){op.postingDate=statementDate(dates[1][0]);operations.push(op);}else reject('Некорректная операция');
   }
-  return {operations,rejected,format:'yandex-pdf'};
+  const calculated={income:0,expense:0};
+  for(const op of operations)calculated[op.type]+=Math.round(op.amount*100);
+  const reconciliation=Object.fromEntries(['income','expense'].map(type=>[type,{
+    expected:totals[type],actual:calculated[type]/100,
+    difference:totals[type]===null?null:(calculated[type]-Math.round(totals[type]*100))/100
+  }]));
+  return {operations,rejected,format:'yandex-pdf',reconciliation};
 }
 
 export function parseStatementText(text) {

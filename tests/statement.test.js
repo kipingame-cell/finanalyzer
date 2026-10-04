@@ -87,3 +87,47 @@ test('Yandex unequal monetary columns remain visible for review',()=>{
 test('unknown extracted text is reported rather than zero/zero',()=>{
  const r=parseStatementText('Неизвестный шаблон выписки с текстом');assert.equal(r.operations.length,0);assert.equal(r.rejected.length,1);
 });
+const qrTable=`Входящий перевод СБП, Тест 25.09.2025
+25.09.2025 +20,00 ₽ +20,00 ₽ в 11:49
+Оплата СБП QR (YANDEX.TAXI) 25.09.2025
+25.09.2025 -12,00 ₽ -12,00 ₽
+в 12:00
+Оплата СБП QR (оплата ж/д 04.03.2026
+04.03.2026 -1 449,50 ₽ -1 449,50 ₽
+перевозок) в 11:26
+Возврат средств СБП QR (оплата 04.03.2026
+04.03.2026 +1 449,50 ₽ +1 449,50 ₽
+ж/д перевозок) в 11:28
+Оплата СБП QR 08.06.2026 08.06.2026 -1,00 ₽ -
+1,00 ₽
+(https://example.invalid) в 14:39
+Продолжение на следующей странице
+Страница 63 из 96
+Описание операции Дата и время Дата Карта
+Сумма в валюте Сумма в валюте
+операции обработки операции ЭСП
+МСК МСК
+Оплата СБП QR (skvn) 08.06.2026 08.06.2026 -
+10,00 ₽ -10,00 ₽ в 15:17
+Всего расходных операций -1 472,50 ₽
+Всего приходных операций +1 469,50 ₽
+С уважением,
+Начальник отдела
+Страница 96 из 96`;
+test('QR payments/refunds split from neighbouring transfers and own descriptions',()=>{
+ const r=parseStatementText(qrTable);assert.equal(r.operations.length,6);assert.equal(r.rejected.length,0);
+ assert.deepEqual(r.operations.map(x=>[x.type,x.amount]),[['income',20],['expense',12],['expense',1449.5],['income',1449.5],['expense',1],['expense',10]]);
+ assert.ok(r.operations.every(x=>!x.note.includes('Страница')&&!x.note.includes('Всего')&&!x.note.includes('МСК МСК')));
+ assert.equal(r.reconciliation.income.difference,0);assert.equal(r.reconciliation.expense.difference,0);
+});
+test('mismatched statement totals are reported independently of selection',()=>{
+ const r=parseStatementText(qrTable.replace('+1 469,50 ₽','+1 500,00 ₽'));
+ assert.equal(r.reconciliation.income.difference,-30.5);
+});
+test('page break inside a transaction preserves continuation',()=>{
+ const r=parseStatementText('Оплата СБП QR (SHOP) 08.06.2026\nПродолжение на следующей странице\nСтраница 1 из 2\nОписание операции Дата и время Дата Карта\nСумма в валюте Сумма в валюте\nоперации обработки операции ЭСП\nМСК МСК\n08.06.2026 -12,00 ₽ -12,00 ₽ в 15:17');
+ assert.equal(r.operations.length,1);assert.equal(r.operations[0].amount,12);
+});
+test('missing totals are not presented as a successful reconciliation',()=>{
+ const r=parseStatementText(yandexLayout);assert.equal(r.reconciliation.income.expected,null);assert.equal(r.reconciliation.expense.difference,null);
+});
