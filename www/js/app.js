@@ -69,12 +69,8 @@ function accountStripHTML() {
   const accs = S.getAccounts();
   const items = [{ id: 'all', name: '💠 Всего' }, ...accs];
   return `<div class="chip-row" id="acc-strip" style="margin-bottom:12px">` + items.map(it => {
-    let sub;
-    if (it.id === 'all') sub = S.fmtMoney(S.balance());
-    else {
-      const a = S.getAccount(it.id);
-      sub = a.balance != null ? S.fmtMoney(a.balance) + ' ●' : S.fmtMoney(S.balance(a.id));
-    }
+    const totals = S.monthTotals(selectedMonth,it.id);
+    const sub = 'итог ' + S.fmtMoney(totals.income-totals.expense,true);
     return `<span class="chip ${currentAccount === it.id ? 'active' : ''}" data-acc="${it.id}">${esc(it.name)} · ${sub}</span>`;
   }).join('') + `</div>`;
 }
@@ -103,11 +99,15 @@ function bindTransferCard() {
   $('#show-transfers').onclick=()=>{ currentTab='ops'; opsFilter='transfer'; opsSearch=''; opsAllMonths=false; selectedOps.clear(); renderCurrent(); };
 }
 
+function openMonthOperations() {
+  currentTab='ops'; opsAllMonths=false; opsFilter='all'; opsSearch=''; selectedOps.clear(); renderCurrent();
+}
+
 function renderHome() {
   const mk = selectedMonth;
   const acc = accFilter();
   const { income, expense } = S.monthTotals(mk, acc);
-  const bal = S.balance(acc);
+  const bal = income - expense;
   const cats = S.byCategory(mk, 'expense', acc);
   const recent = S.txInMonth(mk,acc).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)).slice(0,5);
   const monthName = new Date(mk+'-01T12:00:00').toLocaleString('ru-RU', { month: 'long', year:'numeric' });
@@ -116,19 +116,18 @@ function renderHome() {
 
   view().innerHTML = `
     <div class="page-head">
-      <div><h1>${APP_NAME}</h1><div class="sub">${monthName[0].toUpperCase() + monthName.slice(1)} · v${APP_VERSION}</div></div>
+      <div><h1>${APP_NAME}</h1><div class="sub">${monthName[0].toUpperCase() + monthName.slice(1)} · ${APP_VERSION.startsWith('v') ? APP_VERSION : 'v'+APP_VERSION}</div></div>
       <button class="btn btn-sm btn-ghost" id="btn-notif">🔔 ${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : ''}</button>
     </div>
     ${accountStripHTML()}
     ${monthPickerHTML()}
     <div class="card hero">
-      <div class="bal-label">Изменение средств за всю историю · ${esc(balLabel)}</div>
+      <div class="bal-label">Итог за ${monthName} · ${esc(balLabel)}</div>
       <div class="bal-value">${S.fmtMoney(bal)}</div>
-      ${selAcc && selAcc.balance != null ? `<div class="muted" style="font-size:12.5px;margin-top:-6px;margin-bottom:8px">● по данным банка: ${S.fmtMoney(selAcc.balance)}</div>` : ''}
       <div class="row">
         <div class="mini">Доходы<b style="color:#bbf7d0">${S.fmtMoney(income, true)}</b></div>
         <div class="mini">Расходы<b>${S.fmtMoney(-expense, true)}</b></div>
-        <div class="mini">Итог месяца<b>${S.fmtMoney(income - expense, true)}</b></div>
+        <div class="mini">Операций<b>${S.txInMonth(mk,acc).length}</b></div>
       </div>
     </div>
     <div class="card">
@@ -145,13 +144,15 @@ function renderHome() {
     ${budgetCardHTML(cats)}
     ${transferCardHTML(mk,acc)}
     <div class="card">
-      <div class="card-title">Последние операции месяца</div>
-      ${recent.length ? recent.map(txRowHTML).join('') : '<div class="empty"><span class="big">📭</span>Нажмите ＋, чтобы добавить первую операцию</div>'}
+      <div class="card-title">Операции · ${monthName}</div>
+      ${recent.length ? recent.map(txRowHTML).join('') : '<div class="empty"><span class="big">📭</span>В выбранном месяце операций нет</div>'}
+      <button class="btn btn-block" id="show-month-ops">Все операции за этот месяц</button>
     </div>`;
 
   if (cats.length) {
     drawDonut($('#donut'), cats.map(c => ({ label: c.category.name, value: c.sum, color: c.category.color })), S.fmtMoney(expense));
   }
+  $('#show-month-ops').onclick=openMonthOperations;
   bindMonthPicker();
   bindTransferCard();
   $('#btn-notif').onclick = openNotifications;
@@ -855,7 +856,7 @@ async function autoUpdateCheck() {
 
 function boot() {
   S.initStore();
-  document.querySelectorAll('.tab').forEach(t => t.onclick = () => { currentTab = t.dataset.tab; renderCurrent(); });
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => { if(t.dataset.tab==='ops' && currentTab!=='ops'){openMonthOperations();return;} currentTab=t.dataset.tab; renderCurrent(); });
   $('#fab').onclick = () => openTxModal();
   renderCurrent();
   setTimeout(autoUpdateCheck, 2500);
