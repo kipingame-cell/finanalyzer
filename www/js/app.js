@@ -11,7 +11,10 @@ import { openStatementImport } from './statement-ui.js';
 let currentTab = 'home';
 let opsFilter = 'all';      // all | income | expense
 let currentAccount = 'all'; // all | id счёта
-let statsMonthOffset = 0;
+let selectedMonth = S.currentMonthKey();
+let opsSearch = '';
+let opsAllMonths = false;
+const selectedOps = new Set();
 let pendingSuggCount = 0;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -45,7 +48,7 @@ function dayLabel(iso) {
   const diff = Math.round((today - dd) / 86400000);
   if (diff === 0) return 'Сегодня';
   if (diff === 1) return 'Вчера';
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year:'numeric', weekday: 'short' });
 }
 
 // ---------- Модалки ----------
@@ -78,18 +81,36 @@ function accountStripHTML() {
 function bindAccountStrip() {
   const strip = $('#acc-strip');
   if (!strip) return;
-  strip.querySelectorAll('[data-acc]').forEach(el => el.onclick = () => { currentAccount = el.dataset.acc; renderCurrent(false); });
+  strip.querySelectorAll('[data-acc]').forEach(el => el.onclick = () => { currentAccount = el.dataset.acc; selectedOps.clear(); renderCurrent(false); });
 }
 function accFilter() { return currentAccount === 'all' ? undefined : currentAccount; }
 
+function monthPickerHTML() {
+  return `<div class="flex" style="margin-bottom:12px"><button class="btn btn-sm" id="prev-m" aria-label="Предыдущий месяц">←</button><input id="selected-month" type="month" value="${selectedMonth}" style="min-width:0;flex:1"><button class="btn btn-sm" id="next-m" aria-label="Следующий месяц">→</button><button class="btn btn-sm" id="now-m">Сегодня</button></div>`;
+}
+function bindMonthPicker() {
+  const move = delta => { const [y,m] = selectedMonth.split('-').map(Number); selectedMonth = S.monthKey(new Date(y,m-1+delta,1)); selectedOps.clear(); opsAllMonths=false; renderCurrent(false); };
+  $('#prev-m').onclick = () => move(-1);
+  $('#next-m').onclick = () => move(1);
+  $('#now-m').onclick = () => { selectedMonth=S.currentMonthKey(); selectedOps.clear(); opsAllMonths=false; renderCurrent(false); };
+  $('#selected-month').onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { selectedMonth=e.target.value; selectedOps.clear(); opsAllMonths=false; renderCurrent(false); } };
+}
+function transferCardHTML(mk, acc) {
+  const t=S.transferTotals(mk,acc);
+  return `<div class="card"><div class="card-title">↔ Переводы себе · ${t.count}</div><div>Пришло: ${S.fmtMoney(t.income)} · Ушло: ${S.fmtMoney(t.expense)}</div><p class="muted">Не входят в доходы, расходы и бюджеты. Движение по счетам сохраняется.</p><button class="btn btn-sm" id="show-transfers">Открыть переводы</button></div>`;
+}
+function bindTransferCard() {
+  $('#show-transfers').onclick=()=>{ currentTab='ops'; opsFilter='transfer'; opsSearch=''; opsAllMonths=false; selectedOps.clear(); renderCurrent(); };
+}
+
 function renderHome() {
-  const mk = S.currentMonthKey();
+  const mk = selectedMonth;
   const acc = accFilter();
   const { income, expense } = S.monthTotals(mk, acc);
   const bal = S.balance(acc);
   const cats = S.byCategory(mk, 'expense', acc);
-  const recent = S.getState().transactions.filter(t => !acc || (t.accountId || 'main') === acc).slice(0, 5);
-  const monthName = new Date().toLocaleString('ru-RU', { month: 'long' });
+  const recent = S.txInMonth(mk,acc).sort((a,b)=>Date.parse(b.date)-Date.parse(a.date)).slice(0,5);
+  const monthName = new Date(mk+'-01T12:00:00').toLocaleString('ru-RU', { month: 'long', year:'numeric' });
   const selAcc = acc ? S.getAccount(acc) : null;
   const balLabel = selAcc ? selAcc.name : 'Все счета';
 
@@ -99,14 +120,15 @@ function renderHome() {
       <button class="btn btn-sm btn-ghost" id="btn-notif">🔔 ${pendingSuggCount ? `<span class="badge">${pendingSuggCount}</span>` : ''}</button>
     </div>
     ${accountStripHTML()}
+    ${monthPickerHTML()}
     <div class="card hero">
-      <div class="bal-label">Баланс · ${esc(balLabel)}</div>
+      <div class="bal-label">Изменение средств за всю историю · ${esc(balLabel)}</div>
       <div class="bal-value">${S.fmtMoney(bal)}</div>
       ${selAcc && selAcc.balance != null ? `<div class="muted" style="font-size:12.5px;margin-top:-6px;margin-bottom:8px">● по данным банка: ${S.fmtMoney(selAcc.balance)}</div>` : ''}
       <div class="row">
         <div class="mini">Доходы<b style="color:#bbf7d0">${S.fmtMoney(income, true)}</b></div>
-        <div class="mini">Расходы<b>${S.fmtMoney(expense, true)}</b></div>
-        <div class="mini">Остаток месяца<b>${S.fmtMoney(income - expense, true)}</b></div>
+        <div class="mini">Расходы<b>${S.fmtMoney(-expense, true)}</b></div>
+        <div class="mini">Итог месяца<b>${S.fmtMoney(income - expense, true)}</b></div>
       </div>
     </div>
     <div class="card">
@@ -121,14 +143,17 @@ function renderHome() {
         </div>` : '<div class="empty"><span class="big">🌱</span>Пока нет трат в этом месяце</div>'}
     </div>
     ${budgetCardHTML(cats)}
+    ${transferCardHTML(mk,acc)}
     <div class="card">
-      <div class="card-title">Последние операции</div>
+      <div class="card-title">Последние операции месяца</div>
       ${recent.length ? recent.map(txRowHTML).join('') : '<div class="empty"><span class="big">📭</span>Нажмите ＋, чтобы добавить первую операцию</div>'}
     </div>`;
 
   if (cats.length) {
     drawDonut($('#donut'), cats.map(c => ({ label: c.category.name, value: c.sum, color: c.category.color })), S.fmtMoney(expense));
   }
+  bindMonthPicker();
+  bindTransferCard();
   $('#btn-notif').onclick = openNotifications;
   bindAccountStrip();
   bindTxRows();
@@ -137,7 +162,6 @@ function renderHome() {
 function budgetCardHTML(cats) {
   const withBudget = S.getCategories('expense').filter(c => c.budget > 0);
   if (!withBudget.length) return '';
-  const mk = S.currentMonthKey();
   const spent = Object.fromEntries(cats.map(c => [c.category.id, c.sum]));
   return `<div class="card"><div class="card-title">Бюджеты на месяц</div>` + withBudget.map(c => {
     const s = spent[c.id] || 0;
@@ -151,7 +175,7 @@ function budgetCardHTML(cats) {
 }
 
 function txRowHTML(t) {
-  const c = S.getCategory(t.categoryId);
+  const c = S.isOwnTransfer(t) ? {name:'Переводы себе',icon:'↔',color:'#60a5fa'} : S.getCategory(t.categoryId);
   const a = S.getAccount(t.accountId || 'main');
   return `<div class="tx-row" data-id="${t.id}">
     <div class="tx-ico" style="background:${c.color}22">${c.icon}</div>
@@ -177,9 +201,10 @@ function bindTxRows() {
 // ============================================================
 function renderOps() {
   const acc = accFilter();
-  const txs = S.getState().transactions
-    .filter(t => opsFilter === 'all' || t.type === opsFilter)
-    .filter(t => !acc || (t.accountId || 'main') === acc);
+  const txs = (opsAllMonths ? S.getState().transactions.filter(t=>!acc||(t.accountId||'main')===acc) : S.txInMonth(selectedMonth,acc))
+    .filter(t => opsFilter === 'all' || (opsFilter === 'transfer' ? S.isOwnTransfer(t) : t.type === opsFilter && !S.isOwnTransfer(t)))
+    .filter(t => !opsSearch || (t.note || '').toLocaleLowerCase('ru').includes(opsSearch.toLocaleLowerCase('ru')))
+    .sort((a,b)=>Date.parse(b.date)-Date.parse(a.date));
   const groups = {};
   for (const t of txs) {
     const k = dayLabel(t.date);
@@ -188,16 +213,32 @@ function renderOps() {
   view().innerHTML = `
     <div class="page-head"><h1>Операции</h1><span class="muted">${txs.length} шт.</span></div>
     ${accountStripHTML()}
+    ${monthPickerHTML()}
+    <label style="display:block;margin:12px 0"><input id="ops-all-months" type="checkbox" ${opsAllMonths?'checked':''}> За всю историю</label>
+    <div class="field"><label>Поиск по описанию (например, своё имя или номер)</label><input id="ops-search" value="${esc(opsSearch)}" type="search"><button class="btn btn-sm" id="ops-find">Найти</button></div>
     <div class="seg">
       <button data-f="all" class="${opsFilter === 'all' ? 'active' : ''}">Все</button>
       <button data-f="income" class="${opsFilter === 'income' ? 'active' : ''}">Доходы</button>
+      <button data-f="transfer" class="${opsFilter === 'transfer' ? 'active' : ''}">Себе</button>
       <button data-f="expense" class="${opsFilter === 'expense' ? 'active' : ''}">Расходы</button>
     </div>
+    <div class="card"><div class="flex" style="flex-wrap:wrap"><button class="btn btn-sm" id="select-visible">Выбрать найденные</button><button class="btn btn-sm" id="clear-selection">Снять выбор</button><button class="btn btn-sm" id="mark-own">Это переводы себе</button><button class="btn btn-sm" id="mark-normal">Обычные операции</button></div><div class="muted" id="selection-count">Выбрано: ${selectedOps.size}</div></div>
     ${txs.length ? Object.entries(groups).map(([day, arr]) => `
       <div class="day-head">${day}</div>
-      <div class="card" style="padding:4px 16px">${arr.map(txRowHTML).join('')}</div>`).join('')
+      <div class="card" style="padding:4px 16px">${arr.map(t=>`<label class="muted"><input type="checkbox" data-select="${esc(t.id)}" ${selectedOps.has(t.id)?'checked':''}> Выбрать</label>${txRowHTML(t)}`).join('')}</div>`).join('')
     : '<div class="empty"><span class="big">📭</span>Операций нет</div>'}`;
-  view().querySelectorAll('.seg button').forEach(b => b.onclick = () => { opsFilter = b.dataset.f; renderOps(); });
+  bindMonthPicker();
+  $('#ops-all-months').onchange=e=>{opsAllMonths=e.target.checked;selectedOps.clear();renderOps();};
+  const search=()=>{opsSearch=$('#ops-search').value.trim();selectedOps.clear();renderOps();};
+  $('#ops-find').onclick=search;
+  $('#ops-search').onkeydown=e=>{if(e.key==='Enter')search();};
+  const count=()=>{$('#selection-count').textContent='Выбрано: '+selectedOps.size;};
+  view().querySelectorAll('[data-select]').forEach(el=>el.onchange=()=>{if(el.checked)selectedOps.add(el.dataset.select);else selectedOps.delete(el.dataset.select);count();});
+  $('#select-visible').onclick=()=>{txs.forEach(t=>selectedOps.add(t.id));renderOps();};
+  $('#clear-selection').onclick=()=>{selectedOps.clear();renderOps();};
+  const mark=value=>{if(!selectedOps.size){toast('Сначала выберите операции');return;}try{const n=S.setOwnTransfers([...selectedOps],value);selectedOps.clear();renderOps();toast('Обновлено операций: '+n);}catch{toast('Не удалось сохранить');}};
+  $('#mark-own').onclick=()=>mark(true);$('#mark-normal').onclick=()=>mark(false);
+  view().querySelectorAll('.seg button').forEach(b => b.onclick = () => { opsFilter = b.dataset.f; selectedOps.clear(); renderOps(); });
   bindAccountStrip();
   bindTxRows();
 }
@@ -206,25 +247,22 @@ function renderOps() {
 // АНАЛИТИКА
 // ============================================================
 function renderStats() {
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth() - statsMonthOffset, 1);
-  const mk = S.monthKey(target);
+  const mk = selectedMonth;
+  const target = new Date(mk+'-01T12:00:00');
   const acc = accFilter();
   const { income, expense } = S.monthTotals(mk, acc);
   const cats = S.byCategory(mk, 'expense', acc);
-  const months = S.lastNMonths(6);
+  const months = S.lastNMonths(6,acc,mk);
   const merch = S.topMerchants(mk, 5, acc);
-  const mName = target.toLocaleString('ru-RU', { month: 'long', year: statsMonthOffset > 11 ? 'numeric' : undefined });
+  const mName = target.toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
 
   view().innerHTML = `
     <div class="page-head">
       <h1>Аналитика</h1>
-      <div class="flex">
-        <button class="btn btn-sm" id="prev-m">←</button>
-        <button class="btn btn-sm" id="next-m" ${statsMonthOffset === 0 ? 'disabled style="opacity:.4"' : ''}>→</button>
-      </div>
     </div>
     ${accountStripHTML()}
+    ${monthPickerHTML()}
+    ${transferCardHTML(mk,acc)}
     <div class="card">
       <div class="card-title">${mName[0].toUpperCase() + mName.slice(1)}</div>
       <div class="flex" style="justify-content:space-around;text-align:center">
@@ -234,7 +272,7 @@ function renderStats() {
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Полгода: доходы vs расходы</div>
+      <div class="card-title">6 месяцев, включая выбранный</div>
       <canvas class="chart" id="bars" height="160"></canvas>
       <div class="flex mt8" style="justify-content:center;font-size:12px" class="muted">
         <span class="muted">🟢 доход</span><span class="muted">🔴 расход</span>
@@ -256,8 +294,8 @@ function renderStats() {
 
   drawBars($('#bars'), months);
   if (cats.length) drawDonut($('#donut2'), cats.map(c => ({ label: c.category.name, value: c.sum, color: c.category.color })), S.fmtMoney(expense));
-  $('#prev-m').onclick = () => { statsMonthOffset++; renderStats(); };
-  const nm = $('#next-m'); if (nm) nm.onclick = () => { if (statsMonthOffset > 0) { statsMonthOffset--; renderStats(); } };
+  bindMonthPicker();
+  bindTransferCard();
   bindAccountStrip();
 }
 
@@ -471,7 +509,7 @@ function bindSuggestionButtons(container) {
         if (act === 'add') {
           if (S.findTxByHash(hash)) { card.remove(); return; }
           const acc = S.ensureAccount({ id: p.accountId, name: p.accountName, bankId: p.bankId });
-          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: p.smsId ? 'sms' : 'notification', hash, contentHash: p.contentHash, smsId: p.smsId });
+          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, ownTransfer:p.ownTransfer, date: new Date(p.ts || Date.now()).toISOString(), source: p.smsId ? 'sms' : 'notification', hash, contentHash: p.contentHash, smsId: p.smsId });
           if (p.balance != null) S.setAccountBalance(acc.id, p.balance);
           markSeen(hash);
           card.remove(); toast('Записано: ' + acc.name); refreshBadge(); renderCurrent(false);
@@ -521,6 +559,7 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
     <div class="field"><input id="f-amount" class="amount-input" inputmode="decimal" placeholder="0" value="${src.amount || ''}"></div>
     <div class="field"><label>Категория</label><div class="cat-grid" id="cat-grid"></div></div>
     <div class="field"><label>Счёт / карта</label><div class="chip-row" id="acc-row">${S.getAccounts().map(a => `<span class="chip ${a.id === accountId ? 'active' : ''}" data-a="${a.id}">${esc(a.name)}</span>`).join('')}</div></div>
+    <label style="display:block;margin:12px 0"><input id="f-own" type="checkbox" ${S.isOwnTransfer(src)?'checked':''}> ↔ Перевод между своими счетами</label><p class="muted">Исключить из доходов и расходов, сохранив направление движения денег.</p>
     <div class="field"><label>Комментарий</label><input id="f-note" value="${esc(src.note || '')}" placeholder="Напр.: Пятёрочка"></div>
     <div class="field"><label>Дата</label><input id="f-date" type="datetime-local" value="${toLocalInput(src.date)}"></div>
     <div class="flex">
@@ -551,11 +590,13 @@ function openTxModal(existing = null, draft = null, onSaved = null) {
 
   $('#tx-save', m).onclick = () => {
     const amount = parseFloat(String($('#f-amount', m).value).replace(',', '.'));
-    if (!amount || amount <= 0) { toast('Введите сумму'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { toast('Введите сумму'); return; }
+    const date = new Date($('#f-date',m).value || Date.now());
+    if (!Number.isFinite(date.getTime())) { toast('Проверьте дату'); return; }
     const patch = {
-      type, amount, categoryId, accountId,
+      type, amount, categoryId, accountId, ownTransfer: $('#f-own',m).checked,
       note: $('#f-note', m).value.trim(),
-      date: new Date($('#f-date', m).value || Date.now()).toISOString(),
+      date: date.toISOString(),
       source: src.source || 'manual',
     };
     if (existing) { S.updateTransaction(existing.id, patch); toast('Сохранено'); }

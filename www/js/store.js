@@ -1,3 +1,5 @@
+import { isOwnTransfer } from './transfers.js';
+export { isOwnTransfer } from './transfers.js';
 // Хранилище данных: операции, категории, настройки. Всё локально (localStorage).
 import { DEFAULT_CATEGORIES } from './config.js';
 
@@ -140,6 +142,23 @@ export function setAccountBalance(id, bal) {
   if (a && isFinite(bal)) { a.balance = bal; a.balanceAt = Date.now(); save(); }
 }
 
+// Transfers keep their bank direction for account cash flow, but are excluded
+// from earned income / consumption. An explicit user decision overrides inference.
+export function setOwnTransfers(ids, value) {
+  const selected = new Set(ids);
+  const previous = state.transactions.filter(t => selected.has(t.id)).map(t => [t, t.ownTransfer]);
+  try { previous.forEach(([t]) => { t.ownTransfer = Boolean(value); }); save(); }
+  catch (e) { previous.forEach(([t, old]) => { if (old === undefined) delete t.ownTransfer; else t.ownTransfer = old; }); throw e; }
+  return previous.length;
+}
+export function transferTotals(mk, accountId) {
+  const totals = {income: 0, expense: 0, count: 0};
+  for (const t of txInMonth(mk, accountId)) if (isOwnTransfer(t) && ['income','expense'].includes(t.type)) {
+    totals[t.type] += Math.round(Number(t.amount) * 100); totals.count++;
+  }
+  totals.income /= 100; totals.expense /= 100; return totals;
+}
+
 // ---------- Статистика ----------
 export function monthKey(d) {
   const dt = new Date(d);
@@ -159,35 +178,38 @@ export function txInMonth(mk, accountId) {
 export function monthTotals(mk, accountId) {
   let income = 0, expense = 0;
   for (const t of txInMonth(mk, accountId)) {
-    if (t.type === 'income') income += t.amount; else expense += t.amount;
+    if (isOwnTransfer(t)) continue;
+    if (t.type === 'income') income += Math.round(Number(t.amount)*100);
+    else if (t.type === 'expense') expense += Math.round(Number(t.amount)*100);
   }
-  return { income: Math.round(income * 100) / 100, expense: Math.round(expense * 100) / 100 };
+  return { income: income / 100, expense: expense / 100 };
 }
 
 export function balance(accountId) {
   let b = 0;
-  for (const t of state.transactions) if (txAccountOk(t, accountId)) b += t.type === 'income' ? t.amount : -t.amount;
-  return Math.round(b * 100) / 100;
+  for (const t of state.transactions) if (txAccountOk(t, accountId) && ['income','expense'].includes(t.type)) b += (t.type === 'income' ? 1 : -1) * Math.round(Number(t.amount)*100);
+  return b / 100;
 }
 
 export function byCategory(mk, type = 'expense', accountId) {
   const map = {};
   for (const t of txInMonth(mk, accountId)) {
-    if (t.type !== type) continue;
-    map[t.categoryId] = (map[t.categoryId] || 0) + t.amount;
+    if (t.type !== type || isOwnTransfer(t)) continue;
+    map[t.categoryId] = (map[t.categoryId] || 0) + Number(t.amount);
   }
   return Object.entries(map)
     .map(([categoryId, sum]) => ({ category: getCategory(categoryId), sum: Math.round(sum * 100) / 100 }))
     .sort((a, b) => b.sum - a.sum);
 }
 
-export function lastNMonths(n) {
+export function lastNMonths(n, accountId, endMonth = currentMonthKey()) {
   const res = [];
-  const now = new Date();
+  const [year, month] = endMonth.split('-').map(Number);
+  const now = new Date(year, month - 1, 1);
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const mk = monthKey(d);
-    res.push({ mk, label: d.toLocaleString('ru-RU', { month: 'short' }), ...monthTotals(mk) });
+    res.push({ mk, label: d.toLocaleString('ru-RU', { month: 'short' }), ...monthTotals(mk, accountId) });
   }
   return res;
 }
@@ -201,9 +223,9 @@ export function avgMonthlyExpense(months = 3) {
 export function topMerchants(mk, limit = 5, accountId) {
   const map = {};
   for (const t of txInMonth(mk, accountId)) {
-    if (t.type !== 'expense' || !t.note) continue;
+    if (t.type !== 'expense' || isOwnTransfer(t) || !t.note) continue;
     const key = t.note.trim();
-    map[key] = (map[key] || 0) + t.amount;
+    map[key] = (map[key] || 0) + Number(t.amount);
   }
   return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, limit)
     .map(([note, sum]) => ({ note, sum: Math.round(sum * 100) / 100 }));

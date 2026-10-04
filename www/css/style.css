@@ -145,3 +145,9 @@ canvas.chart { width: 100%; display: block; }
 .grow { flex: 1; }
 .muted { color: var(--muted); }
 .mt8 { margin-top: 8px; } .mt16 { margin-top: 16px; }
+
+/* Month navigation and dense bank history on narrow phone screens. */
+#selected-month { color-scheme: dark; background: var(--card2); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 9px 4px; font: inherit; }
+.hero .row { flex-wrap: wrap; }
+.tx-sum { overflow-wrap: anywhere; max-width: 45%; }
+@media (max-width: 380px) { .seg button { padding: 9px 5px; font-size: 13px; } }

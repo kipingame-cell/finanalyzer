@@ -1,3 +1,4 @@
+import { isOwnTransfer } from './transfers.js';
 // Conservative notification parser: require an operation, never use an account balance as its amount.
 import { CATEGORY_KEYWORDS, DEFAULT_CATEGORIES, KNOWN_BANK_PACKAGES } from './config.js';
 export const BANKS = [
@@ -118,7 +119,7 @@ export function parseNotification(pkg, title, text) {
   if (op.type === 'income') {
     for (const [re,label] of [[/зарплат/i,'Зарплата'],[/аванс/i,'Аванс'],[/преми/i,'Премия'],[/возврат/i,'Возврат'],[/к[эе]шб[эе]к|cashback/i,'Кэшбэк']]) if (re.test(full)) {note=label;break;}
   }
-  return {type:op.type, amount:op.amount, categoryId:guessCategory(note || full,op.type),
+  return {type:op.type, amount:op.amount, ownTransfer:isOwnTransfer({note:full}), categoryId:guessCategory(note || full,op.type),
     note:note || normalize(title).slice(0,80), source:'notification', hash:notifHash(pkg,title,text),
     contentHash: notifHash(bank.id, '', normalize(text).toLowerCase()),
     rawText:full.slice(0,1000), bankId:bank.id, bankName:bank.name, last4:card,

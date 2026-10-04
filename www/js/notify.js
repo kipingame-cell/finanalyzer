@@ -114,7 +114,7 @@ export function importSuggestions(suggestions) {
       st.accounts.push(account);
     }
     st.transactions.unshift({ id: 'n_' + p.hash, type: p.type, amount: p.amount,
-      categoryId: p.categoryId, accountId: id, note: p.note,
+      categoryId: p.categoryId, accountId: id, note: p.note, ownTransfer:p.ownTransfer,
       date: new Date(p.ts).toISOString(), source: p.smsId ? 'sms' : 'notification', hash: p.hash, contentHash: p.contentHash, smsId: p.smsId });
     if (p.balance != null && (!account.balanceAt || p.ts >= account.balanceAt)) {
       account.balance = p.balance; account.balanceAt = p.ts;

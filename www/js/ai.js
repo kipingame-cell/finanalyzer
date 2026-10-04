@@ -1,5 +1,5 @@
 // ИИ-советник: работает офлайн (эвристики) и с любым OpenAI-совместимым токеном.
-import { getState, getSettings, monthTotals, byCategory, lastNMonths, avgMonthlyExpense, currentMonthKey, balance, fmtMoney, topMerchants, txInMonth } from './store.js';
+import { isOwnTransfer, getState, getSettings, monthTotals, byCategory, lastNMonths, avgMonthlyExpense, currentMonthKey, balance, fmtMoney, topMerchants, txInMonth } from './store.js';
 
 // ---------- Офлайн-анализ (работает без всякого токена) ----------
 export function offlineInsights() {
@@ -45,7 +45,7 @@ export function offlineInsights() {
   }
 
   // Частые мелкие траты
-  const txs = txInMonth(mk).filter(t => t.type === 'expense' && t.amount < 300);
+  const txs = txInMonth(mk).filter(t => t.type === 'expense' && !isOwnTransfer(t) && t.amount < 300);
   if (txs.length >= 15) {
     const sum = txs.reduce((s, t) => s + t.amount, 0);
     tips.push({ level: 'warn', title: `${txs.length} мелких покупок до 300 ${getSettings().currency}`, text: `Суммарно это уже ${fmtMoney(sum)}. Мелочи съедают бюджет незаметно.` });
@@ -70,7 +70,7 @@ function buildFinanceSummary() {
   const cats = byCategory(mk, 'expense').slice(0, 8)
     .map(c => `- ${c.category.name}: ${Math.round(c.sum)} ₽`).join('\n');
   const months = lastNMonths(6).map(m => `${m.label}: доход ${Math.round(m.income)}, расход ${Math.round(m.expense)}`).join('\n');
-  return `Баланс: ${Math.round(balance())} ₽\nТекущий месяц: доход ${Math.round(income)} ₽, расход ${Math.round(expense)} ₽\nТраты по категориям:\n${cats || 'нет данных'}\nПоследние месяцы:\n${months}`;
+  return `Изменение средств по записанным операциям (не банковский остаток): ${Math.round(balance())} ₽\nТекущий месяц: доход ${Math.round(income)} ₽, расход ${Math.round(expense)} ₽\nТраты по категориям:\n${cats || 'нет данных'}\nПоследние месяцы:\n${months}`;
 }
 
 export async function askAI(question) {
