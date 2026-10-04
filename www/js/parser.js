@@ -120,6 +120,7 @@ export function parseNotification(pkg, title, text) {
   }
   return {type:op.type, amount:op.amount, categoryId:guessCategory(note || full,op.type),
     note:note || normalize(title).slice(0,80), source:'notification', hash:notifHash(pkg,title,text),
+    contentHash: notifHash(bank.id, '', normalize(text).toLowerCase()),
     rawText:full.slice(0,1000), bankId:bank.id, bankName:bank.name, last4:card,
     accountId:bank.id === 'other' && !card ? '' : bank.id+(card ? '_'+card : ''),
     accountName:bank.id === 'other' && !card ? '' : bank.name+(card ? ' •'+card : ''), balance:op.balance};
@@ -132,6 +133,7 @@ export function parseNotificationList(items, seenHashes = [], dismissedHashes = 
     const p = parseNotification(it.pkg,it.title,it.text);
     if (!p || ignored.has(p.hash)) continue;
     const ts = Number(it.ts);
+    if (it.smsId) p.smsId = String(it.smsId);
     p.ts = Number.isFinite(ts) && ts > 0 ? ts : Date.now();
     // Android updates of one notification share its key and post time;
     // separate identical purchases at different times must remain separate.

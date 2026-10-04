@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { drawDonut, drawBars } from './charts.js';
 import { offlineInsights, askAI, hasToken } from './ai.js';
 import { checkUpdate, downloadUpdate } from './updater.js';
-import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed, importSuggestions } from './notify.js';
+import { isNativeAvailable, isListenerEnabled, openListenerSettings, fetchSuggestions, fetchRaw, injectTestNotification, clearNative, markSeen, markDismissed, importSuggestions, importSmsHistory, getBackgroundStatus, openBackgroundSettings } from './notify.js';
 import { parsePastedText } from './parser.js';
 
 let currentTab = 'home';
@@ -323,6 +323,19 @@ async function openNotifications() {
     <h2>🔔 Операции из уведомлений</h2>
     <label class="field"><span><input type="checkbox" id="auto-import" ${S.getSettings().notifAutoImport ? 'checked' : ''}> Автоматически записывать операции</span></label>
     <p class="muted">При открытом приложении — проверка каждые 2 секунды. Уведомления из фона импортируются при возвращении.</p>
+    <div class="card">
+      <div class="card-title">История SMS из «Сообщений»</div>
+      <p class="muted">Прочитать все сохранённые входящие SMS и записать распознанные операции с исходными датами. Требуется разрешение SMS. Удалённые SMS и RCS-чаты недоступны. Повторный импорт не добавляет те же SMS снова. Для операций, записанных до этой версии, проверьте возможные повторы.</p>
+      <button class="btn btn-block" id="sms-history">Импортировать всю историю SMS</button>
+      <button class="btn btn-ghost btn-block" id="sms-stop" hidden>Остановить импорт</button>
+      <p id="sms-progress" class="muted" role="status"></p>
+    </div>
+    <div class="card">
+      <div class="card-title">Работа в фоне</div>
+      <p id="background-status" class="muted">Проверка службы…</p>
+      <p class="muted">Разрешите автозапуск и выберите «Без ограничений» в настройках батареи приложения. Служба сохраняет уведомления при закрытом экране. Распознавание и запись в список выполняются при открытии приложения. После принудительной остановки откройте приложение снова.</p>
+      <button class="btn btn-block" id="background-settings">Настроить фоновую работу</button>
+    </div>
     <div id="notif-body"></div>
     <div class="card" style="margin-top:6px">
       <div class="card-title">Или вставьте текст вручную</div>
@@ -333,7 +346,29 @@ async function openNotifications() {
     <button class="btn btn-ghost btn-block" id="btn-close-n">Закрыть</button>`);
 
   $('#auto-import', m).onchange = e => { S.setSetting('notifAutoImport', e.target.checked); refreshBadge(); };
-  $('#btn-close-n', m).onclick = closeModal;
+  let stopSms = false;
+  $('#sms-stop', m).onclick = () => { stopSms = true; };
+  $('#btn-close-n', m).onclick = () => { stopSms = true; closeModal(); };
+  $('#sms-history', m).onclick = async () => {
+    const button = $('#sms-history', m), status = $('#sms-progress', m), stop = $('#sms-stop', m);
+    button.disabled = true; stop.hidden = false; stopSms = false;
+    status.textContent = 'Запрашиваю доступ к SMS…';
+    try {
+      const r = await importSmsHistory(p => {
+        status.textContent = `Прочитано SMS: ${p.scanned}. Добавлено операций: ${p.imported}.`;
+      }, () => stopSms || !m.isConnected);
+      status.textContent = `${r.cancelled ? 'Импорт остановлен' : 'Импорт завершён'}. Прочитано SMS: ${r.scanned}. Добавлено операций: ${r.imported}.`;
+      renderCurrent(false);
+    } catch (error) { status.textContent = error.message || String(error); }
+    finally { button.disabled = false; stop.hidden = true; }
+  };
+  $('#background-settings', m).onclick = async () => {
+    try { await openBackgroundSettings(); } catch (error) { toast(error.message || 'Настройки недоступны'); }
+  };
+  getBackgroundStatus().then(status => {
+    $('#background-status', m).textContent = !status ? 'Доступно в Android-приложении' :
+      `Служба: ${status.connected ? 'подключена' : 'не подключена'}. Батарея: ${status.unrestricted ? 'без оптимизации Android' : 'проверьте ограничения'}.`;
+  }).catch(() => { $('#background-status', m).textContent = 'Не удалось проверить службу'; });
   $('#btn-parse', m).onclick = () => {
     const text = $('#paste', m).value;
     const parsed = parsePastedText(text);
@@ -435,7 +470,7 @@ function bindSuggestionButtons(container) {
         if (act === 'add') {
           if (S.findTxByHash(hash)) { card.remove(); return; }
           const acc = S.ensureAccount({ id: p.accountId, name: p.accountName, bankId: p.bankId });
-          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: 'notification', hash });
+          S.addTransaction({ type: p.type, amount: p.amount, categoryId: p.categoryId, accountId: acc.id, note: p.note, date: new Date(p.ts || Date.now()).toISOString(), source: p.smsId ? 'sms' : 'notification', hash, contentHash: p.contentHash, smsId: p.smsId });
           if (p.balance != null) S.setAccountBalance(acc.id, p.balance);
           markSeen(hash);
           card.remove(); toast('Записано: ' + acc.name); refreshBadge(); renderCurrent(false);

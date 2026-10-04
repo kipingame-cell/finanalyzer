@@ -13,27 +13,34 @@ import org.json.JSONObject;
 
 // Persist first: Android can deliver notifications while the WebView is stopped.
 public class BankNotificationService extends NotificationListenerService {
+    static volatile boolean connected = false;
+    @Override public void onListenerConnected() {
+        super.onListenerConnected(); connected = true;
+        // Recover still-visible notifications after Android reconnects the listener.
+        try {
+            StatusBarNotification[] active = getActiveNotifications();
+            if (active != null) for (StatusBarNotification item : active) onNotificationPosted(item);
+        } catch (Exception error) { Log.w("FinAnalyzer", "Active notification recovery failed", error); }
+    }
+    @Override public void onListenerDisconnected() {
+        connected = false;
+        if (android.os.Build.VERSION.SDK_INT >= 24) requestRebind(
+                new android.content.ComponentName(this, BankNotificationService.class));
+        super.onListenerDisconnected();
+    }
+    @Override public void onDestroy() { connected = false; super.onDestroy(); }
     static final Object QUEUE_LOCK = new Object();
 
     static void append(Context context, String pkg, String title, String text, long ts, String key) throws Exception {
         if (title.isEmpty() && text.isEmpty()) return;
         synchronized (QUEUE_LOCK) {
-            SharedPreferences sp = context.getSharedPreferences("bank_notifs", MODE_PRIVATE);
-            JSONArray arr = new JSONArray(sp.getString("items", "[]"));
-            for (int i = arr.length() - 1; i >= 0; i--) {
-                JSONObject old = arr.optJSONObject(i);
-                if (old != null && key.equals(old.optString("key")) && ts == old.optLong("ts")) {
-                    if (title.equals(old.optString("title")) && text.equals(old.optString("text"))) return;
-                    arr.remove(i); // replace expanded versions of the same notification
-                }
-            }
             JSONObject item = new JSONObject();
             item.put("pkg", pkg); item.put("title", title); item.put("text", text);
             item.put("ts", ts); item.put("key", key);
-            arr.put(item);
-            while (arr.length() > 2000) arr.remove(0);
-            if (!sp.edit().putString("items", arr.toString()).commit())
-                throw new IllegalStateException("Notification queue write failed");
+            NotificationQueue queue = NotificationQueue.get(context);
+            queue.migrate(context); queue.put(item);
+            context.getSharedPreferences("bank_notifs", MODE_PRIVATE).edit()
+                    .putLong("lastCapture", System.currentTimeMillis()).apply();
         }
     }
 
