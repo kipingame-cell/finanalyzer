@@ -2,6 +2,12 @@ import {bankDateKey} from './dates.js';
 // Explicit, reviewable imports. An unsigned, unclassified amount is never a debit by default.
 import {guessCategory, parseNotification} from './parser.js';
 import {getState, save} from './store.js';
+export function sameBankOperation(a,b) {
+  return (a.accountId||'main')===(b.accountId||'main') && a.type===b.type &&
+    Math.round(Number(a.amount)*100)===Math.round(Number(b.amount)*100) &&
+    Number.isFinite(Date.parse(a.date)) && Date.parse(a.date)===Date.parse(b.date);
+}
+const notificationSource = t => ['sms','notification'].includes(t.source);
 const norm = s => String(s ?? '').replace(/[\u00a0\u202f]/g,' ').replace(/\s+/g,' ').trim();
 const DATE = /\b(\d{2})\.(\d{2})\.(\d{4})(?:[ T]+(\d{2}):(\d{2})(?::(\d{2}))?)?/;
 export function statementDate(value) {
@@ -182,7 +188,8 @@ export function parseStatementText(text) {
   return {operations,rejected,format:'text'};
 }
 export function prepareStatement(result,accountId,state=getState()) {
-  const counts=new Map();
+  const counts=new Map(), matched=new Set();
+  const notifications=state.transactions.filter(t=>notificationSource(t)&&!t.excluded);
   const keys=new Set(state.transactions.map(t=>t.statementKey).filter(Boolean));
   const amounts=new Set(state.transactions.filter(t=>!t.excluded).map(t=>[t.type,Math.round(Number(t.amount)*100),bankDateKey(t.date)].join('|')));
   return result.operations.map(op=>{
@@ -191,25 +198,31 @@ export function prepareStatement(result,accountId,state=getState()) {
     const occurrence=op.externalId?1:(counts.get(base)||0)+1;counts.set(base,occurrence);
     const statementKey=base+'#'+occurrence;
     const duplicate=keys.has(statementKey);
-    const possibleDuplicate=!duplicate && amounts.has([op.type,Math.round(op.amount*100),bankDateKey(op.date)].join('|'));
-    return {...op,statementKey,accountId,duplicate,possibleDuplicate};
+    const replacement=!duplicate && notifications.find(t=>!matched.has(t.id)&&sameBankOperation(t,{...op,accountId}));
+    if(replacement)matched.add(replacement.id);
+    const possibleDuplicate=!duplicate && !replacement && amounts.has([op.type,Math.round(op.amount*100),bankDateKey(op.date)].join('|'));
+    return {...op,statementKey,accountId,duplicate,possibleDuplicate,replacesNotification:Boolean(replacement)};
   });
 }
 export function importStatement(rows,accountId) {
   const st=getState(),snapshot=JSON.parse(JSON.stringify(st));
   if(!st.accounts.some(a=>a.id===accountId))throw new Error('Выберите существующий счёт');
   let count=0;
-  const keys=new Set(st.transactions.map(t=>t.statementKey).filter(Boolean)),added=[];
+  const keys=new Set(st.transactions.map(t=>t.statementKey).filter(Boolean)),added=[],replaced=new Set();
+  const notifications=st.transactions.filter(t=>notificationSource(t)&&!t.excluded);
   try {
     for(const row of rows) {
       if(row.accountId!==accountId || !operation(row.date,row.amount,row.type,row.note,row.raw))throw new Error('Неверная операция');
       if(!row.statementKey)throw new Error('Не найден ключ операции');
       if(keys.has(row.statementKey))continue;
       keys.add(row.statementKey);
+      const replacement=notifications.find(t=>!replaced.has(t.id)&&sameBankOperation(t,{...row,accountId}));
+      if(replacement)replaced.add(replacement.id);
       added.push({id:'st_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
         date:row.date,type:row.type,amount:row.amount,note:row.note,categoryId:row.categoryId,accountId,
+        ...(replacement?{hash:replacement.hash,contentHash:replacement.contentHash,smsId:replacement.smsId,notificationLinked:replacement.notificationLinked,statementNotificationLinked:true}:{}),
         source:'statement',statementKey:row.statementKey,postingDate:row.postingDate});count++;
     }
-    if(count){st.transactions=[...added.reverse(),...st.transactions];save();}return count;
+    if(count){st.transactions=[...added.reverse(),...st.transactions.filter(t=>!replaced.has(t.id))];save();}return count;
   }catch(error){Object.assign(st,snapshot);throw error;}
 }

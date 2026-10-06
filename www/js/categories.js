@@ -10,6 +10,8 @@ export function guessCategory(text, type) {
   }
   if(/(?:исходящий|входящий|внутрибанковский) перевод|перевод (?:сбп|себе|на |от )|вам перевели|получен перевод/.test(low)) return type==='income'?'transfer_in':'transfer_out';
   if(type==='expense') {
+    if(/\bip lukankin a\.a\./.test(low))return 'food';
+    if(/yandex\*plus|boosty|бусти/.test(low))return 'subs';
     if(/снятие наличных|выдача наличных|банкомат/.test(low))return 'cash';
     if(/комиссия/.test(low))return 'fees';
     if(/налог|штраф|госпошлин/.test(low))return 'taxes';

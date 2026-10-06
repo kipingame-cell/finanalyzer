@@ -1,5 +1,6 @@
 // Обёртка над нативным модулем чтения уведомлений (NotificationListenerService).
 // В браузере/без нативного модуля все функции безопасно деградируют.
+import { sameBankOperation } from './statement.js';
 import { parseNotificationList } from './parser.js';
 import { getState, save } from './store.js';
 
@@ -100,6 +101,12 @@ export function importSuggestions(suggestions) {
     if(seen.has(p.hash))continue;
     if(!Number.isFinite(p.ts)||!Number.isFinite(p.amount)||p.amount<=0||!['income','expense'].includes(p.type))continue;
     seen.add(p.hash);
+    const statement=st.transactions.find(t=>t.source==='statement'&&!t.excluded&&!t.statementNotificationLinked&&sameBankOperation(t,{...p,accountId:p.accountId||'main',date:new Date(p.ts).toISOString()}));
+    if(statement) {
+      Object.assign(statement,{hash:p.hash,contentHash:p.contentHash,smsId:p.smsId,statementNotificationLinked:true});
+      st.seenNotifHashes.push(p.hash);
+      continue;
+    }
     // Match only the same source text across SMS history and SMS notifications,
     // one-to-one, within delivery tolerance. Keep identical separate SMS ids.
     const duplicate = p.contentHash && st.transactions.find(t =>

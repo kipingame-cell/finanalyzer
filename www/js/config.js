@@ -1,7 +1,7 @@
 // Конфигурация приложения
 // ВНИМАНИЕ: при сборке APK workflow заменяет эту строку на полный тег (vX.Y.Z-bN),
 // чтобы установленное приложение знало номер своей сборки и не дёргало обновление зря.
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.6.1';
 export const GITHUB_REPO = 'kipingame-cell/finanalyzer'; // для автообновления
 export const APP_NAME = 'Финансовый анализатор';
 
@@ -41,7 +41,7 @@ export const DEFAULT_CATEGORIES = [
 
 // Ключевые слова для автоматического определения категории по тексту
 export const CATEGORY_KEYWORDS = {
-  food: ['pyaterochka', 'pyatyorochka', 'magnit', 'dixy', 'perekrestok', 'auchan', 'пятёрочка', 'пятерочка', 'магнит', 'перекрёсток', 'перекресток', 'лента', 'ашан', 'окей', 'продукты', 'супермаркет', 'fix price', 'фикс прайс', 'красное&белое', 'бристоль', 'дикси', 'самокат', 'лавка'],
+  food: ['ip lukankin a.a.', 'pyaterochka', 'pyatyorochka', 'magnit', 'dixy', 'perekrestok', 'auchan', 'пятёрочка', 'пятерочка', 'магнит', 'перекрёсток', 'перекресток', 'лента', 'ашан', 'окей', 'продукты', 'супермаркет', 'fix price', 'фикс прайс', 'красное&белое', 'бристоль', 'дикси', 'самокат', 'лавка'],
   cafe: ['stolovaya', 'pekar', 'sdobushka', 'picca', 'pizza', 'vkusno', 'кафе', 'ресторан', 'кофе', 'coffee', 'бургер', 'пицц', 'суши', 'kfc', 'вкусно и точка', 'макдоналдс', 'столовая', 'додо', 'шаурм', 'бар ', 'паб', 'delivery', 'деливери', 'яндекс еда', 'яндекс.еда'],
   transport: ['yandex.taxi', 'yandex*4112*rasp', 'ж/д', 'rzd', 'метро', 'автобус', 'трамвай', 'троллейбус', 'такси', 'yandex taxi', 'яндекс такси', 'uber', 'ситимобил', 'маршрутк', 'проезд', 'электричк', 'ржд', 'аэрофлот', 'победа', 'авиа'],
   fuel: ['азс', 'лукойл', 'газпромнефть', 'роснефть', 'татнефть', 'башнефть', 'заправк', 'топливо', 'shell', 'эка'],
@@ -50,7 +50,7 @@ export const CATEGORY_KEYWORDS = {
   clothes: ['одежд', 'обувь', 'lamoda', 'ламода', 'зара', 'zara', 'h&m', 'спортмастер', 'адик', 'nike', 'adidas', 'kari', 'rendez-vous'],
   market: ['wildberries', 'вайлдберриз', 'ozon', 'озон', 'яндекс маркет', 'market.yandex', 'алиэкспресс', 'aliexpress', 'мегамаркет', 'sbermegamarket', 'сбермегамаркет', 'kazanexpress', 'маркетплейс'],
   fun: ['кино', 'кинотеатр', 'игр', 'steam', 'playstation', 'xbox', 'боулинг', 'квест', 'концерт', 'театр', 'аквапарк', 'букмекер', 'ставк'],
-  subs: ['подписк', 'subscription', 'netflix', 'spotify', 'youtube premium', 'яндекс плюс', 'yandex plus', 'vk музыка', 'кинопоиск', 'ivi', 'okko', 'premier', 'chatgpt', 'openai', 'google one', 'apple.com/bill', 'icloud'],
+  subs: ['yandex*plus', 'boosty', 'бусти', 'подписк', 'subscription', 'netflix', 'spotify', 'youtube premium', 'яндекс плюс', 'yandex plus', 'vk музыка', 'кинопоиск', 'ivi', 'okko', 'premier', 'chatgpt', 'openai', 'google one', 'apple.com/bill', 'icloud'],
   comm: ['hostkey', 'мтс', 'билайн', 'beeline', 'мегафон', 'tele2', 'теле2', 'yota', 'йота', 'ростелеком', 'дом.ру', 'интернет', 'связь', 'трафик'],
   education: ['курс', 'обучен', 'учебник', 'книг', 'book', 'skillbox', 'нетология', 'удаленк', 'школ'],
   gifts: ['флаувау', 'подарок', 'цветы', 'букет', 'flowwow', 'ювелир'],

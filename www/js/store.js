@@ -51,7 +51,8 @@ function normalizeState(data) {
     const guessed=guessCategory(t.note,t.type);
     const missing=!cats.has(t.categoryId)||['other_exp','other_inc'].includes(t.categoryId)||String(t.categoryId).startsWith('uncategorized');
     const wrongBank=t.categoryId==='market'&&['transfer_in','transfer_out'].includes(guessed)&&!t.categoryManual;
-    if(missing||wrongBank)t.categoryId=guessed;
+    const merchantRule=t.type==='expense'&&/ip lukankin a\.a\.|yandex\*plus|boosty|бусти/i.test(t.note||'')&&!t.categoryManual;
+    if(missing||wrongBank||merchantRule)t.categoryId=guessed;
     if(typeof t.amount==='string'&&Number.isFinite(Number(t.amount)))t.amount=Number(t.amount);
   }
   return data;
