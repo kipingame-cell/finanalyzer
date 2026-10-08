@@ -1,10 +1,3 @@
-# GitHub Actions: сборка APK + публикация релиза (для автообновления).
-# Файл назван .txt намеренно: токен песочницы не может пушить в .github/workflows/.
-# ОДИН РАЗ через веб-интерфейс GitHub: Add file → Create new file →
-# имя: .github/workflows/build.yml → вставить всё содержимое ниже → Commit.
-# После этого каждый push в main собирает свежий APK и обновляет релиз:
-# Actions → последний зелёный запуск → Artifacts → app-debug-apk.
-# ============================================================
 name: Build APK and Release
 on:
   push:
@@ -27,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm install
+      - name: Validate financial logic before publishing
+        run: npm test
       # Постоянный ключ подписи: без него каждая сборка подписана новым случайным
       # ключом, и Android отказывается ставить APK поверх («конфликтует с другим пакетом»).
       # ОДИН РАЗ: Settings → Secrets and variables → Actions → New repository secret →
