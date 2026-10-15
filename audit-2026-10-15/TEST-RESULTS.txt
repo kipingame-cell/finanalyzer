@@ -1,0 +1,100 @@
+
+> finanalyzer@1.6.1 pretest
+> node scripts/bundle-pdf.cjs
+
+
+> finanalyzer@1.6.1 test
+> node --test tests/*.test.js
+
+✔ million-ruble transfers do not inflate earnings, spending, categories or merchants (3.358697ms)
+✔ one-sided transfer keeps cash flow but not spending (0.468086ms)
+✔ ordinary SBP and internal transfers must not be inferred to belong to owner (0.538984ms)
+✔ bulk classification updates existing history and can be reversed without losing original category (1.234783ms)
+✔ explicit opt-out overrides automatic self-transfer detection (0.298891ms)
+✔ historical chart respects account, end month and year rollover (13.36197ms)
+✔ decimal totals use cents and imported numeric strings cannot concatenate (0.347294ms)
+✔ failed batch save restores previous classification (0.611943ms)
+✔ self-transfer marker survives notification merchant extraction and import (8.227052ms)
+12,000-row prepare/import/reimport/report: 827 ms
+✔ specific categories for actual bank merchant spellings and transfer purpose (3.435463ms)
+✔ migration replaces legacy unspecified categories, preserves manual choices and saves original backup (1.958966ms)
+✔ Moscow midnight, month/year boundary and edit round trip stay consistent (1.01418ms)
+✔ same report excludes self transfers and excluded copies consistently while keeping cash flow (20.143072ms)
+✔ invalid imported rows are preserved for review but cannot poison totals (0.826757ms)
+✔ bad backup and failed edit do not mutate saved history (1.734226ms)
+✔ bulk category assignment keeps original amounts and rejects mixed income/expense selection (0.5637ms)
+✔ advisor follows selected historical month and account (1.953398ms)
+✔ statement duplicate preview works across accounts and uses Moscow date (5.09404ms)
+✔ large statement preparation and repeated import use indexes, preserving legitimate rows (834.506286ms)
+✔ Покупка 450,00 ₽, ПЯТЁРОЧКА. Баланс: 12 340,55 ₽ (5.274208ms)
+✔ Баланс 9000 ₽. Покупка 300 ₽ OZON (5.673691ms)
+✔ MIR-1234 Оплата 1 234,56р MAGNIT Остаток: 0р (0.424681ms)
+✔ Перевод 500р от ИВАН И. Баланс 1000р (0.504121ms)
+✔ Перевод 40p OZON Баланс: 3756.33р (0.735259ms)
+✔ Зачисление зарплаты 52 141 RUB. Доступно 60 000 RUB (0.376248ms)
+✔ Оплата 1,234.56 RUB в SHOP (0.29819ms)
+✔ Возврат 299 ₽ OZON (0.303427ms)
+✔ Подписка Яндекс Плюс 299₽ (0.751484ms)
+✔ reject Баланс: 500 ₽ (0.274334ms)
+✔ reject Ваш код: 1234. Оплата 500 ₽ (0.087812ms)
+✔ reject Покупка 500 ₽ отклонена (0.124187ms)
+✔ reject Скидка на покупку 500 ₽ (0.103917ms)
+✔ reject Покупка 100 ₽ и покупка 200 ₽ (0.449428ms)
+✔ reject Просто 100 ₽ (0.058929ms)
+✔ reject Перевод не выполнен 100 ₽ (0.044948ms)
+✔ reject unrelated app (0.183757ms)
+✔ category respects operation type (0.129545ms)
+✔ merchant and card (0.166912ms)
+✔ same notification dedup, distinct identical purchases retained (3.321175ms)
+✔ pasted separate operations (1.575507ms)
+✔ automatic import persists once and preserves latest balance (3.34748ms)
+✔ failed persistence can retry without losing operations (2.280421ms)
+✔ full history paginates and repeat import is idempotent (15.840309ms)
+✔ permission denial leaves financial data untouched (0.822181ms)
+✔ interrupted import can resume via a safe full rescan (1.767707ms)
+✔ history and captured SMS match one-to-one without merging separate purchases (1.49106ms)
+✔ native queue traverses all pages and acknowledges only consumed messages (1.256075ms)
+✔ requested merchants classify directly and keep income semantics (3.220629ms)
+✔ statement replaces SMS ignoring description; reimport is idempotent (3.598349ms)
+✔ statement wins when SMS arrives later, with one-to-one matching (4.030871ms)
+✔ identical real rows stay separate and replace only matching SMS copies (1.746244ms)
+✔ different account, time, amount or direction cannot be silently replaced (2.198838ms)
+✔ failed save restores replaced SMS and allows safe retry (1.295214ms)
+✔ existing automatic categories migrate, manual categories survive (0.807127ms)
+✔ CSV signed amounts and multiline quoted description (5.147166ms)
+✔ separate debit and credit columns, invalid and foreign rows reported (1.962761ms)
+✔ unsigned unclassified CSV amount is not assumed expense (0.343017ms)
+✔ cancelled and contradictory CSV rows rejected (0.509659ms)
+✔ dated PDF text and wrapped merchant (7.232252ms)
+✔ card suffix cannot be mistaken for signed amount (3.10902ms)
+✔ invalid dates and foreign currency text rejected (0.488968ms)
+✔ repeat import is idempotent and legitimate identical rows preserved (3.276945ms)
+✔ possible existing operation is flagged rather than silently deleted (1.427083ms)
+✔ storage failure rolls back full statement batch (2.179969ms)
+✔ PDF fragments sorted geometrically (1.187151ms)
+✔ CSV escaped quotes and delimiters (1.801488ms)
+Warning: UnknownErrorException: Unable to load font data at: file://<workspace>/repos/finanalyzer/www/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf
+✔ real PDF text extraction and parsing (482.628067ms)
+✔ dated balance and multi-amount text cannot become a purchase (0.508758ms)
+✔ Yandex interleaved two-date two-amount rows (1.718733ms)
+✔ Yandex same layout flattened to one line (0.506384ms)
+✔ Yandex positive incoming transfer and unicode minus (0.698905ms)
+✔ Yandex unequal monetary columns remain visible for review (3.295978ms)
+✔ unknown extracted text is reported rather than zero/zero (0.199ms)
+✔ QR payments/refunds split from neighbouring transfers and own descriptions (1.417278ms)
+✔ mismatched statement totals are reported independently of selection (5.423243ms)
+✔ page break inside a transaction preserves continuation (0.411922ms)
+✔ missing totals are not presented as a successful reconciliation (0.548848ms)
+✔ all reported joined block shapes preserve every operation, sign and time (9.455081ms)
+✔ Sber QR and internal transfer labels can wrap across PDF lines (0.482889ms)
+✔ payment reversal requires explicit matching positive booked amounts (0.460424ms)
+✔ balance furniture does not consume next operation or bank totals (0.405121ms)
+ℹ tests 81
+ℹ suites 0
+ℹ pass 81
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1057.166454
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
