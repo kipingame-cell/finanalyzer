@@ -1,0 +1,366 @@
+FILE: finanalyzer-continued-tests.log
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> finanalyzer@1.6.1 pretest
+> node scripts/bundle-pdf.cjs
+
+
+> finanalyzer@1.6.1 test
+> node --test tests/*.test.js
+
+✔ million-ruble transfers do not inflate earnings, spending, categories or merchants (6.954106ms)
+✔ one-sided transfer keeps cash flow but not spending (0.390059ms)
+✔ ordinary SBP and internal transfers must not be inferred to belong to owner (0.313683ms)
+✔ bulk classification updates existing history and can be reversed without losing original category (5.364077ms)
+✔ explicit opt-out overrides automatic self-transfer detection (1.605984ms)
+✔ historical chart respects account, end month and year rollover (25.021665ms)
+✔ decimal totals use cents and imported numeric strings cannot concatenate (0.900279ms)
+✔ failed batch save restores previous classification (0.570512ms)
+✔ self-transfer marker survives notification merchant extraction and import (7.041647ms)
+12,000-row prepare/import/reimport/report: 573 ms
+✔ specific categories for actual bank merchant spellings and transfer purpose (3.578992ms)
+✔ migration replaces legacy unspecified categories, preserves manual choices and saves original backup (2.096975ms)
+✔ Moscow midnight, month/year boundary and edit round trip stay consistent (0.861671ms)
+✔ same report excludes self transfers and excluded copies consistently while keeping cash flow (18.460623ms)
+✔ invalid imported rows are preserved for review but cannot poison totals (0.844254ms)
+✔ bad backup and failed edit do not mutate saved history (1.811865ms)
+✔ bulk category assignment keeps original amounts and rejects mixed income/expense selection (0.595589ms)
+✔ advisor follows selected historical month and account (2.627081ms)
+✔ statement duplicate preview works across accounts and uses Moscow date (3.588731ms)
+✔ large statement preparation and repeated import use indexes, preserving legitimate rows (578.639665ms)
+✔ Покупка 450,00 ₽, ПЯТЁРОЧКА. Баланс: 12 340,55 ₽ (8.488001ms)
+✔ Баланс 9000 ₽. Покупка 300 ₽ OZON (9.980714ms)
+✔ MIR-1234 Оплата 1 234,56р MAGNIT Остаток: 0р (0.406013ms)
+✔ Перевод 500р от ИВАН И. Баланс 1000р (0.492494ms)
+✔ Перевод 40p OZON Баланс: 3756.33р (0.577061ms)
+✔ Зачисление зарплаты 52 141 RUB. Доступно 60 000 RUB (0.445372ms)
+✔ Оплата 1,234.56 RUB в SHOP (0.300334ms)
+✔ Возврат 299 ₽ OZON (1.989673ms)
+✔ Подписка Яндекс Плюс 299₽ (0.468757ms)
+✔ reject Баланс: 500 ₽ (0.321154ms)
+✔ reject Ваш код: 1234. Оплата 500 ₽ (0.163567ms)
+✔ reject Покупка 500 ₽ отклонена (0.096536ms)
+✔ reject Скидка на покупку 500 ₽ (0.067262ms)
+✔ reject Покупка 100 ₽ и покупка 200 ₽ (0.123857ms)
+✔ reject Просто 100 ₽ (0.091418ms)
+✔ reject Перевод не выполнен 100 ₽ (0.055543ms)
+✔ reject unrelated app (0.166411ms)
+✔ category respects operation type (0.12568ms)
+✔ merchant and card (0.250328ms)
+✔ same notification dedup, distinct identical purchases retained (1.02652ms)
+✔ pasted separate operations (0.627177ms)
+✔ automatic import persists once and preserves latest balance (1.342086ms)
+✔ failed persistence can retry without losing operations (1.751183ms)
+✔ full history paginates and repeat import is idempotent (20.590828ms)
+✔ permission denial leaves financial data untouched (0.989994ms)
+✔ interrupted import can resume via a safe full rescan (1.75566ms)
+✔ history and captured SMS match one-to-one without merging separate purchases (0.978246ms)
+✔ native queue traverses all pages and acknowledges only consumed messages (1.570981ms)
+✔ requested merchants classify directly and keep income semantics (1.88154ms)
+✔ statement replaces SMS ignoring description; reimport is idempotent (3.083264ms)
+✔ statement wins when SMS arrives later, with one-to-one matching (1.584642ms)
+✔ identical real rows stay separate and replace only matching SMS copies (2.102664ms)
+✔ different account, time, amount or direction cannot be silently replaced (2.297718ms)
+✔ failed save restores replaced SMS and allows safe retry (1.171949ms)
+✔ existing automatic categories migrate, manual categories survive (0.791455ms)
+✔ CSV signed amounts and multiline quoted description (5.190339ms)
+✔ separate debit and credit columns, invalid and foreign rows reported (2.013473ms)
+✔ unsigned unclassified CSV amount is not assumed expense (0.450039ms)
+✔ cancelled and contradictory CSV rows rejected (1.473534ms)
+✔ dated PDF text and wrapped merchant (6.421623ms)
+✔ card suffix cannot be mistaken for signed amount (2.492592ms)
+✔ invalid dates and foreign currency text rejected (0.356678ms)
+✔ repeat import is idempotent and legitimate identical rows preserved (1.580104ms)
+✔ possible existing operation is flagged rather than silently deleted (1.315966ms)
+✔ storage failure rolls back full statement batch (1.005607ms)
+✔ PDF fragments sorted geometrically (0.937896ms)
+✔ CSV escaped quotes and delimiters (0.231079ms)
+Warning: UnknownErrorException: Unable to load font data at: file:///workspace/scratch/c44567a1db69/repos/finanalyzer/www/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf
+✔ real PDF text extraction and parsing (390.648621ms)
+✔ dated balance and multi-amount text cannot become a purchase (0.475788ms)
+✔ Yandex interleaved two-date two-amount rows (1.605844ms)
+✔ Yandex same layout flattened to one line (0.442248ms)
+✔ Yandex positive incoming transfer and unicode minus (0.732035ms)
+✔ Yandex unequal monetary columns remain visible for review (1.859277ms)
+✔ unknown extracted text is reported rather than zero/zero (0.146472ms)
+✔ QR payments/refunds split from neighbouring transfers and own descriptions (0.88155ms)
+✔ mismatched statement totals are reported independently of selection (0.92099ms)
+✔ page break inside a transaction preserves continuation (0.273724ms)
+✔ missing totals are not presented as a successful reconciliation (0.436078ms)
+✔ all reported joined block shapes preserve every operation, sign and time (5.224365ms)
+✔ Sber QR and internal transfer labels can wrap across PDF lines (0.266071ms)
+✔ payment reversal requires explicit matching positive booked amounts (0.519934ms)
+✔ balance furniture does not consume next operation or bank totals (0.276678ms)
+ℹ tests 81
+ℹ suites 0
+ℹ pass 81
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 762.660864
+
+APK RELEASE CHECK
+tag=v1.6.1-b60
+sha256=0d3276ad5cfe4a4938dd6168b07966bc4c6f3d16264610573894bfca15171aef
+source=local identical sha256
+Verifies
+Verified using v1 scheme (JAR signing): true
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Android Debug, O=FinAnalyzer, C=RU
+Signer #1 certificate SHA-256 digest: 0c6901f467e0fd693084a36586d8ff44a957cbfccdb195e2d47fbe78339fb070
+Signer #1 certificate SHA-1 digest: fb6151328d74faaf6007cec0ddf3d63abfcc74ee
+Signer #1 certificate MD5 digest: 649686d0033074e0fce610a3a1389ffa
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 359e4c89287e425fa143ef2a9fad1cb4355c79e33c5ac5132e357d89e3fcb942
+Signer #1 public key SHA-1 digest: 9ae3fab61dcc5d5eff47e994ea9b91b8acb8e88a
+Signer #1 public key MD5 digest: 86c95762c116ceae55488b139da497f9
+WARNING: META-INF/com/android/build/gradle/app-metadata.properties not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.activity_activity.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.annotation_annotation-experimental.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.appcompat_appcompat-resources.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.appcompat_appcompat.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.arch.core_core-runtime.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.coordinatorlayout_coordinatorlayout.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.core_core-ktx.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.core_core-splashscreen.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.core_core.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.cursoradapter_cursoradapter.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.customview_customview.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.drawerlayout_drawerlayout.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.emoji2_emoji2-views-helper.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.emoji2_emoji2.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.fragment_fragment.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.interpolator_interpolator.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-livedata-core.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-livedata.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-process.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-runtime.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-viewmodel-savedstate.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.lifecycle_lifecycle-viewmodel.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.loader_loader.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.profileinstaller_profileinstaller.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.savedstate_savedstate.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.startup_startup-runtime.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.tracing_tracing.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.vectordrawable_vectordrawable-animated.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.vectordrawable_vectordrawable.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.versionedparcelable_versionedparcelable.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.viewpager_viewpager.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/androidx.webkit_webkit.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/kotlinx_coroutines_android.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/kotlinx_coroutines_core.version not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/services/kotlinx.coroutines.CoroutineExceptionHandler not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+WARNING: META-INF/services/kotlinx.coroutines.internal.MainDispatcherFactory not protected by signature. Unauthorized modifications to this JAR entry will not be detected. Delete or move the entry outside of META-INF/.
+package: name='com.finanalyzer.app' versionCode='60' versionName='1.6.1-b60' platformBuildVersionName='14' platformBuildVersionCode='34' compileSdkVersion='34' compileSdkVersionCodename='14'
+sdkVersion:'22'
+targetSdkVersion:'34'
+uses-permission: name='android.permission.READ_SMS'
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='com.finanalyzer.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+application-label:'FinAnalyzer'
+application-label-af:'FinAnalyzer'
+application-label-am:'FinAnalyzer'
+application-label-ar:'FinAnalyzer'
+application-label-as:'FinAnalyzer'
+application-label-az:'FinAnalyzer'
+application-label-be:'FinAnalyzer'
+application-label-bg:'FinAnalyzer'
+application-label-bn:'FinAnalyzer'
+application-label-bs:'FinAnalyzer'
+application-label-ca:'FinAnalyzer'
+application-label-cs:'FinAnalyzer'
+application-label-da:'FinAnalyzer'
+application-label-de:'FinAnalyzer'
+application-label-el:'FinAnalyzer'
+application-label-en-AU:'FinAnalyzer'
+application-label-en-CA:'FinAnalyzer'
+application-label-en-GB:'FinAnalyzer'
+application-label-en-IN:'FinAnalyzer'
+application-label-en-XC:'FinAnalyzer'
+application-label-es:'FinAnalyzer'
+application-label-es-US:'FinAnalyzer'
+application-label-et:'FinAnalyzer'
+application-label-eu:'FinAnalyzer'
+application-label-fa:'FinAnalyzer'
+application-label-fi:'FinAnalyzer'
+application-label-fr:'FinAnalyzer'
+application-label-fr-CA:'FinAnalyzer'
+application-label-gl:'FinAnalyzer'
+application-label-gu:'FinAnalyzer'
+application-label-hi:'FinAnalyzer'
+application-label-hr:'FinAnalyzer'
+application-label-hu:'FinAnalyzer'
+application-label-hy:'FinAnalyzer'
+application-label-in:'FinAnalyzer'
+application-label-is:'FinAnalyzer'
+application-label-it:'FinAnalyzer'
+application-label-iw:'FinAnalyzer'
+application-label-ja:'FinAnalyzer'
+application-label-ka:'FinAnalyzer'
+application-label-kk:'FinAnalyzer'
+application-label-km:'FinAnalyzer'
+application-label-kn:'FinAnalyzer'
+application-label-ko:'FinAnalyzer'
+application-label-ky:'FinAnalyzer'
+application-label-lo:'FinAnalyzer'
+application-label-lt:'FinAnalyzer'
+application-label-lv:'FinAnalyzer'
+application-label-mk:'FinAnalyzer'
+application-label-ml:'FinAnalyzer'
+application-label-mn:'FinAnalyzer'
+application-label-mr:'FinAnalyzer'
+application-label-ms:'FinAnalyzer'
+application-label-my:'FinAnalyzer'
+application-label-nb:'FinAnalyzer'
+application-label-ne:'FinAnalyzer'
+application-label-nl:'FinAnalyzer'
+application-label-or:'FinAnalyzer'
+application-label-pa:'FinAnalyzer'
+application-label-pl:'FinAnalyzer'
+application-label-pt:'FinAnalyzer'
+application-label-pt-BR:'FinAnalyzer'
+application-label-pt-PT:'FinAnalyzer'
+application-label-ro:'FinAnalyzer'
+application-label-ru:'FinAnalyzer'
+application-label-si:'FinAnalyzer'
+application-label-sk:'FinAnalyzer'
+application-label-sl:'FinAnalyzer'
+application-label-sq:'FinAnalyzer'
+application-label-sr:'FinAnalyzer'
+application-label-sr-Latn:'FinAnalyzer'
+application-label-sv:'FinAnalyzer'
+application-label-sw:'FinAnalyzer'
+application-label-ta:'FinAnalyzer'
+application-label-te:'FinAnalyzer'
+application-label-th:'FinAnalyzer'
+application-label-tl:'FinAnalyzer'
+application-label-tr:'FinAnalyzer'
+application-label-uk:'FinAnalyzer'
+application-label-ur:'FinAnalyzer'
+application-label-uz:'FinAnalyzer'
+application-label-vi:'FinAnalyzer'
+application-label-zh-CN:'FinAnalyzer'
+application-label-zh-HK:'FinAnalyzer'
+application-label-zh-TW:'FinAnalyzer'
+application-label-zu:'FinAnalyzer'
+application-icon-120:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-160:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-240:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-320:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-480:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-640:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application-icon-65534:'res/mipmap-anydpi-v26/ic_launcher.xml'
+application: label='FinAnalyzer' icon='res/mipmap-anydpi-v26/ic_launcher.xml'
+application-debuggable
+launchable-activity: name='com.finanalyzer.app.MainActivity'  label='FinAnalyzer' icon=''
+feature-group: label=''
+  uses-feature: name='android.hardware.faketouch'
+  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'
+  uses-feature: name='android.hardware.telephony'
+  uses-implied-feature: name='android.hardware.telephony' reason='requested a telephony permission'
+provides-component:'notification-listener'
+main
+other-receivers
+supports-screens: 'small' 'normal' 'large' 'xlarge'
+supports-any-density: 'true'
+locales: '--_--' 'af' 'am' 'ar' 'as' 'az' 'be' 'bg' 'bn' 'bs' 'ca' 'cs' 'da' 'de' 'el' 'en-AU' 'en-CA' 'en-GB' 'en-IN' 'en-XC' 'es' 'es-US' 'et' 'eu' 'fa' 'fi' 'fr' 'fr-CA' 'gl' 'gu' 'hi' 'hr' 'hu' 'hy' 'in' 'is' 'it' 'iw' 'ja' 'ka' 'kk' 'km' 'kn' 'ko' 'ky' 'lo' 'lt' 'lv' 'mk' 'ml' 'mn' 'mr' 'ms' 'my' 'nb' 'ne' 'nl' 'or' 'pa' 'pl' 'pt' 'pt-BR' 'pt-PT' 'ro' 'ru' 'si' 'sk' 'sl' 'sq' 'sr' 'sr-Latn' 'sv' 'sw' 'ta' 'te' 'th' 'tl' 'tr' 'uk' 'ur' 'uz' 'vi' 'zh-CN' 'zh-HK' 'zh-TW' 'zu'
+densities: '120' '160' '240' '320' '480' '640' '65534'
+
+ANDROID MANIFEST
+N: android=http://schemas.android.com/apk/res/android
+  E: manifest (line=2)
+    A: android:versionCode(0x0101021b)=(type 0x10)0x3c
+    A: android:versionName(0x0101021c)="1.6.1-b60" (Raw: "1.6.1-b60")
+    A: android:compileSdkVersion(0x01010572)=(type 0x10)0x22
+    A: android:compileSdkVersionCodename(0x01010573)="14" (Raw: "14")
+    A: package="com.finanalyzer.app" (Raw: "com.finanalyzer.app")
+    A: platformBuildVersionCode=(type 0x10)0x22
+    A: platformBuildVersionName=(type 0x10)0xe
+    E: uses-sdk (line=7)
+      A: android:minSdkVersion(0x0101020c)=(type 0x10)0x16
+      A: android:targetSdkVersion(0x01010270)=(type 0x10)0x22
+    E: uses-permission (line=11)
+      A: android:name(0x01010003)="android.permission.READ_SMS" (Raw: "android.permission.READ_SMS")
+    E: uses-permission (line=15)
+      A: android:name(0x01010003)="android.permission.INTERNET" (Raw: "android.permission.INTERNET")
+    E: permission (line=17)
+      A: android:name(0x01010003)="com.finanalyzer.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (Raw: "com.finanalyzer.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+      A: android:protectionLevel(0x01010009)=(type 0x11)0x2
+    E: uses-permission (line=21)
+      A: android:name(0x01010003)="com.finanalyzer.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (Raw: "com.finanalyzer.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+    E: application (line=23)
+      A: android:theme(0x01010000)=@0x7f0e0005
+      A: android:label(0x01010001)=@0x7f0d001c
+      A: android:icon(0x01010002)=@0x7f0c0000
+      A: android:debuggable(0x0101000f)=(type 0x12)0xffffffff
+      A: android:allowBackup(0x01010280)=(type 0x12)0xffffffff
+      A: android:supportsRtl(0x010103af)=(type 0x12)0xffffffff
+      A: android:extractNativeLibs(0x010104ea)=(type 0x12)0xffffffff
+      A: android:roundIcon(0x0101052c)=@0x7f0c0002
+      A: android:appComponentFactory(0x0101057a)="androidx.core.app.CoreComponentFactory" (Raw: "androidx.core.app.CoreComponentFactory")
+      E: activity (line=33)
+        A: android:theme(0x01010000)=@0x7f0e0007
+        A: android:label(0x01010001)=@0x7f0d0029
+        A: android:name(0x01010003)="com.finanalyzer.app.MainActivity" (Raw: "com.finanalyzer.app.MainActivity")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        A: android:launchMode(0x0101001d)=(type 0x10)0x2
+        A: android:configChanges(0x0101001f)=(type 0x11)0xfb4
+        E: intent-filter (line=40)
+          E: action (line=41)
+            A: android:name(0x01010003)="android.intent.action.MAIN" (Raw: "android.intent.action.MAIN")
+          E: category (line=43)
+            A: android:name(0x01010003)="android.intent.category.LAUNCHER" (Raw: "android.intent.category.LAUNCHER")
+      E: provider (line=47)
+        A: android:name(0x01010003)="androidx.core.content.FileProvider" (Raw: "androidx.core.content.FileProvider")
+        A: android:exported(0x01010010)=(type 0x12)0x0
+        A: android:authorities(0x01010018)="com.finanalyzer.app.fileprovider" (Raw: "com.finanalyzer.app.fileprovider")
+        A: android:grantUriPermissions(0x0101001b)=(type 0x12)0xffffffff
+        E: meta-data (line=52)
+          A: android:name(0x01010003)="android.support.FILE_PROVIDER_PATHS" (Raw: "android.support.FILE_PROVIDER_PATHS")
+          A: android:resource(0x01010025)=@0x7f100001
+      E: service (line=57)
+        A: android:label(0x01010001)="FinAnalyzer" (Raw: "FinAnalyzer")
+        A: android:name(0x01010003)="com.finanalyzer.app.BankNotificationService" (Raw: "com.finanalyzer.app.BankNotificationService")
+        A: android:permission(0x01010006)="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" (Raw: "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        E: intent-filter (line=62)
+          E: action (line=63)
+            A: android:name(0x01010003)="android.service.notification.NotificationListenerService" (Raw: "android.service.notification.NotificationListenerService")
+      E: provider (line=67)
+        A: android:name(0x01010003)="androidx.startup.InitializationProvider" (Raw: "androidx.startup.InitializationProvider")
+        A: android:exported(0x01010010)=(type 0x12)0x0
+        A: android:authorities(0x01010018)="com.finanalyzer.app.androidx-startup" (Raw: "com.finanalyzer.app.androidx-startup")
+        E: meta-data (line=71)
+          A: android:name(0x01010003)="androidx.emoji2.text.EmojiCompatInitializer" (Raw: "androidx.emoji2.text.EmojiCompatInitializer")
+          A: android:value(0x01010024)="androidx.startup" (Raw: "androidx.startup")
+        E: meta-data (line=74)
+          A: android:name(0x01010003)="androidx.lifecycle.ProcessLifecycleInitializer" (Raw: "androidx.lifecycle.ProcessLifecycleInitializer")
+          A: android:value(0x01010024)="androidx.startup" (Raw: "androidx.startup")
+        E: meta-data (line=77)
+          A: android:name(0x01010003)="androidx.profileinstaller.ProfileInstallerInitializer" (Raw: "androidx.profileinstaller.ProfileInstallerInitializer")
+          A: android:value(0x01010024)="androidx.startup" (Raw: "androidx.startup")
+      E: receiver (line=82)
+        A: android:name(0x01010003)="androidx.profileinstaller.ProfileInstallReceiver" (Raw: "androidx.profileinstaller.ProfileInstallReceiver")
+        A: android:permission(0x01010006)="android.permission.DUMP" (Raw: "android.permission.DUMP")
+        A: android:enabled(0x0101000e)=(type 0x12)0xffffffff
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        A: android:directBootAware(0x01010505)=(type 0x12)0x0
+        E: intent-filter (line=88)
+          E: action (line=89)
+            A: android:name(0x01010003)="androidx.profileinstaller.action.INSTALL_PROFILE" (Raw: "androidx.profileinstaller.action.INSTALL_PROFILE")
+        E: intent-filter (line=91)
+          E: action (line=92)
+            A: android:name(0x01010003)="androidx.profileinstaller.action.SKIP_FILE" (Raw: "androidx.profileinstaller.action.SKIP_FILE")
+        E: intent-filter (line=94)
+          E: action (line=95)
+            A: android:name(0x01010003)="androidx.profileinstaller.action.SAVE_PROFILE" (Raw: "androidx.profileinstaller.action.SAVE_PROFILE")
+        E: intent-filter (line=97)
+          E: action (line=98)
+            A: android:name(0x01010003)="androidx.profileinstaller.action.BENCHMARK_OPERATION" (Raw: "androidx.profileinstaller.action.BENCHMARK_OPERATION")

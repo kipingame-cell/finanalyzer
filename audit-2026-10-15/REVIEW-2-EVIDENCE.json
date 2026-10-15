@@ -1,0 +1,194 @@
+{
+  "repo": "finanalyzer",
+  "source_commit": "a2224217527cf3242d918885f18781d11404d590",
+  "source_tree": "219cc59ea371409a5ff67db6cc0e652cca7f9e9e",
+  "date": "2026-10-15",
+  "structure": {
+    "repo": "finanalyzer",
+    "blobs": 43,
+    "bytes": 403743,
+    "workflow_files": [
+      ".github/workflows/build.yml"
+    ],
+    "lockfiles": [],
+    "licenses": [],
+    "readme_broken_links": []
+  },
+  "releases_first_10": [
+    {
+      "tag": "v1.1.0-b27",
+      "draft": true,
+      "prerelease": false,
+      "assets": []
+    },
+    {
+      "tag": "v1.6.1-b60",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6555691,
+          "digest": "sha256:0d3276ad5cfe4a4938dd6168b07966bc4c6f3d16264610573894bfca15171aef"
+        }
+      ]
+    },
+    {
+      "tag": "v1.6.1-b59",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6555694,
+          "digest": "sha256:f528c49cd4bce70ae982ca3267673a4410e67149b2e33125528ecb563f8f78ea"
+        }
+      ]
+    },
+    {
+      "tag": "v1.6.0-b58",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6554936,
+          "digest": "sha256:ee7aedd3813bfc26ce7ddb0d77675d0e85ea06f5019a7f0c339caf0ba5709f3e"
+        }
+      ]
+    },
+    {
+      "tag": "v1.5.1-b57",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6548319,
+          "digest": "sha256:29407581fe90d5ac9e71ec3b45ef596ae1d28c7647df89a0fe8379ed2f3b717d"
+        }
+      ]
+    },
+    {
+      "tag": "v1.5.0-b56",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6548341,
+          "digest": "sha256:8187ca9d6e907c3f7025eb4b31595d9e8136769f78e405a6ded1bf26b3fa8c90"
+        }
+      ]
+    },
+    {
+      "tag": "v1.4.3-b55",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6545258,
+          "digest": "sha256:0e6391dd8ceb4431f7edb6ce7e0632b58ccc7a76f0aeec057e0eeee9843619cd"
+        }
+      ]
+    },
+    {
+      "tag": "v1.4.2-b54",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6544983,
+          "digest": "sha256:76d3b0b09446e3823f655d45bdd82ed89b2f4f3e19ffbaef42c160313523b0af"
+        }
+      ]
+    },
+    {
+      "tag": "v1.4.1-b53",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6544018,
+          "digest": "sha256:c42ad7931ffd7cabc5954f3ac7c40e03a2479e89f50c2d98f8012a312a83f583"
+        }
+      ]
+    },
+    {
+      "tag": "v1.4.0-b52",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "app-debug.apk",
+          "bytes": 6542688,
+          "digest": "sha256:19f6776f980ea340a905c58019172a63ded0b05addaa13610e360b71b3ae2a2e"
+        }
+      ]
+    }
+  ],
+  "runs_latest_5": [
+    {
+      "id": 38544608175,
+      "name": "Read-only APK and artifact audit",
+      "head_sha": "205bb770e2545f11a4027eda470831bb0788a29f",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 37754171044,
+      "name": "Build APK and Release",
+      "head_sha": "36689f889e77a88d6d852741e8cec913a5fbe89b",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 37445338060,
+      "name": "Build APK and Release",
+      "head_sha": "0ab01a8920595a3ce1673be810177ff9e7b66380",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 37209110128,
+      "name": "Build APK and Release",
+      "head_sha": "eb24bb2f5a12d656a1e6327c5d5e886887f07cf0",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 37207313467,
+      "name": "Build APK and Release",
+      "head_sha": "50f244b069e4a59118a28d9c3b31fc3386234e12",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "apk": {
+    "repo": "finanalyzer",
+    "tag": "v1.6.1-b60",
+    "status": "inspected binary",
+    "asset_id": 621307686,
+    "source": "local identical sha256",
+    "bytes": 6555691,
+    "sha256": "0d3276ad5cfe4a4938dd6168b07966bc4c6f3d16264610573894bfca15171aef",
+    "expected_digest": "0d3276ad5cfe4a4938dd6168b07966bc4c6f3d16264610573894bfca15171aef"
+  },
+  "findings": [
+    {
+      "id": "FINANALYZER-R2-APK",
+      "priority": "P2",
+      "title": "Опубликованный установщик имеет debuggable=true",
+      "file": ".github/workflows/build.yml",
+      "line": 105,
+      "proof": "Проверен APK v1.6.1-b60, asset 621307686. SHA-256 0d3276ad5cfe4a4938dd6168b07966bc4c6f3d16264610573894bfca15171aef совпал с GitHub digest. apksigner verify: 0; aapt dump badging: application-debuggable. Сертификат — Android Debug. Это проверка настоящего бинарника, а не предположение по имени файла.",
+      "impact": "Development-сборка не отделена технически от установщика, который пользователь получает из Releases. Для production требуется отдельный режим выпуска. Это не доказательство удалённого взлома и не означает, что подпись математически некорректна.",
+      "fix": "Выделить production-выпуск с debuggable=false, приватной стабильной подписью, неизменяемыми версиями и проверкой upgrade. Development APK явно маркировать.",
+      "acceptance": "aapt на production APK не выводит application-debuggable; сертификат совпадает между последовательными production версиями; обновление сохраняет данные."
+    }
+  ],
+  "reproductions": []
+}
