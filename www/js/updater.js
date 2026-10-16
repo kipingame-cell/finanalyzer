@@ -25,8 +25,13 @@ export async function checkUpdate() {
   const rel = await resp.json();
   const latest = parseTag(rel.tag_name);
   if (!latest || !cur) return { hasUpdate: false };
-  const apk = (rel.assets || []).find(a => /\.apk$/i.test(a.name || '')) || (rel.assets || [])[0];
-  if (!apk) return { hasUpdate: false };
+  const apk = (rel.assets || []).find(a => /\.apk$/i.test(a.name || ''));
+  if (!apk) return { hasUpdate: false, error: 'no-apk' };
+  if (rel.draft || rel.prerelease) return { hasUpdate: false, error: 'unstable-release' };
+  try {
+    const url = new URL(apk.browser_download_url);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith(`/${GITHUB_REPO}/releases/download/`)) throw new Error('Invalid asset');
+  } catch { return { hasUpdate: false, error: 'invalid-apk-url' }; }
   // Если в приложение не вшит номер сборки (старая схема), сравниваем только
   // x.y.z — иначе каждый новый билд той же версии будет бесконечно «новым».
   const a = cur.hasBuild ? cur : { ...cur, build: latest.build };
@@ -46,3 +51,4 @@ export function downloadUpdate(url) {
   // Открываем во внешнем браузере — Android сам предложит установить APK после скачивания
   window.open(url, '_blank');
 }
+
